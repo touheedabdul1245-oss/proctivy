@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>PROCTIFY — Exams</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+
+        .exams-page {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .exam-list {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fill, minmax(280px, 1fr));
+            gap: 18px;
+            margin-top: 25px;
+        }
+
+        .exam-list-card {
+            background: rgba(255,255,255,.82);
+            border: 1px solid rgba(80,80,80,.08);
+            border-radius: 22px;
+            padding: 22px;
+            box-shadow:
+                0 12px 30px rgba(70,70,60,.06);
+            transition: .2s ease;
+        }
+
+        .exam-list-card:hover {
+            transform: translateY(-3px);
+            box-shadow:
+                0 18px 35px rgba(70,70,60,.10);
+        }
+
+        .exam-card-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 18px;
+        }
+
+        .exam-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 14px;
+            background: #eee9f5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #76658f;
+        }
+
+        .exam-status {
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            padding: 6px 9px;
+            border-radius: 20px;
+        }
+
+        .exam-status.active {
+            background: #dcefe7;
+            color: #37745e;
+        }
+
+        .exam-status.completed {
+            background: #eeeeea;
+            color: #77776f;
+        }
+
+        .exam-name {
+            font-size: 18px;
+            font-weight: 700;
+            color: #292927;
+        }
+
+        .exam-subject {
+            margin-top: 5px;
+            font-size: 11px;
+            color: #8a8a82;
+        }
+
+        .exam-meta {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-top: 18px;
+        }
+
+        .exam-meta-item {
+            font-size: 10px;
+            color: #77776f;
+        }
+
+        .exam-meta-item strong {
+            color: #292927;
+        }
+
+        .exam-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+
+        .view-exam-btn {
+            border: none;
+            border-radius: 11px;
+            padding: 10px 15px;
+            background: #292927;
+            color: white;
+            font-size: 10px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .view-exam-btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .empty-exams {
+            margin-top: 30px;
+            padding: 45px 20px;
+            text-align: center;
+            border: 1px dashed #d8d8d0;
+            border-radius: 20px;
+            color: #999990;
+            font-size: 12px;
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+<div class="background-art">
+
+    <div class="blob blob-one"></div>
+    <div class="blob blob-two"></div>
+    <div class="blob blob-three"></div>
+
+</div>
+
+
+<div class="exams-page">
+
+    <!-- =====================================================
+         HEADER
+    ====================================================== -->
+
+    <header class="topbar">
+
+        <div>
+
+            <div class="eyebrow">
+                EXAM MANAGEMENT
+            </div>
+
+            <h1>
+                Available Exams
+            </h1>
+
+            <p class="subtitle">
+                View examinations created in PROCTIFY.
+            </p>
+
+        </div>
+
+
+        <div class="top-right">
+
+            <div class="live-pill">
+                <span class="live-dot"></span>
+                PROCTIFY
+            </div>
+
+        </div>
+
+    </header>
+
+
+    <!-- =====================================================
+         EXAM LIST
+    ====================================================== -->
+
+    <section>
+
+        <div
+            id="examList"
+            class="exam-list">
+
+        </div>
+
+
+        <div
+            id="emptyExams"
+            class="empty-exams"
+            style="display:none;">
+
+            No exams have been created yet.
+
+        </div>
+
+    </section>
+
+</div>
+
+
+<script>
+
+lucide.createIcons();
+
+
+/* =========================================================
+   LOAD EXAMS
+========================================================= */
+
+async function loadExams() {
+
+    const examList =
+        document.getElementById(
+            "examList"
+        );
+
+    const emptyExams =
+        document.getElementById(
+            "emptyExams"
+        );
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/exams",
+                {
+                    cache: "no-store"
+                }
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                "Unable to load exams"
+            );
+
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            !data ||
+            data.success !== true ||
+            !Array.isArray(data.exams)
+        ) {
+
+            throw new Error(
+                "Invalid exam data"
+            );
+
+        }
+
+
+        examList.innerHTML = "";
+
+
+        if (data.exams.length === 0) {
+
+            emptyExams.style.display =
+                "block";
+
+            return;
+
+        }
+
+
+        emptyExams.style.display =
+            "none";
+
+
+        data.exams.forEach(
+            exam => {
+
+                const card =
+                    document.createElement(
+                        "div"
+                    );
+
+                card.className =
+                    "exam-list-card";
+
+
+                const status =
+                    String(
+                        exam.status ||
+                        "ACTIVE"
+                    ).toUpperCase();
+
+
+                const statusClass =
+                    status === "ACTIVE"
+                        ? "active"
+                        : "completed";
+
+
+                card.innerHTML = `
+
+                    <div class="exam-card-top">
+
+                        <div class="exam-icon">
+
+                            <i
+                                data-lucide="file-text">
+                            </i>
+
+                        </div>
+
+                        <span
+                            class="exam-status ${statusClass}">
+                            ${escapeHTML(status)}
+                        </span>
+
+                    </div>
+
+
+                    <div class="exam-name">
+                        ${escapeHTML(
+                            exam.exam_name ||
+                            "Untitled Exam"
+                        )}
+                    </div>
+
+
+                    <div class="exam-subject">
+                        ${escapeHTML(
+                            exam.subject ||
+                            "No subject"
+                        )}
+                    </div>
+
+
+                    <div class="exam-meta">
+
+                        <div class="exam-meta-item">
+
+                            <strong>
+                                ${exam.question_count || 0}
+                            </strong>
+
+                            questions
+
+                        </div>
+
+
+                        <div class="exam-meta-item">
+
+                            <strong>
+                                ${exam.duration || 0}
+                            </strong>
+
+                            min
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="exam-actions">
+
+                        <button
+                            class="view-exam-btn"
+                            onclick="viewExam(
+                                '${escapeJS(
+                                    exam.exam_id
+                                )}'
+                            )">
+
+                            View Exam →
+
+                        </button>
+
+                    </div>
+
+                `;
+
+
+                examList.appendChild(
+                    card
+                );
+
+            }
+        );
+
+
+        lucide.createIcons();
+
+    }
+
+
+    catch (error) {
+
+        console.error(
+            "Exam loading error:",
+            error
+        );
+
+
+        examList.innerHTML = `
+
+            <div class="empty-exams"
+                 style="display:block;">
+
+                Unable to load exams.
+
+            </div>
+
+        `;
+
+    }
+
+}
+
+
+/* =========================================================
+   VIEW EXAM
+========================================================= */
+
+function viewExam(examId) {
+
+    if (!examId) {
+        return;
+    }
+
+    window.location.href =
+        "/exam/" +
+        encodeURIComponent(
+            examId
+        );
+
+}
+
+/* =========================================================
+   HTML ESCAPING
+========================================================= */
+
+function escapeHTML(value) {
+
+    return String(value)
+
+        .replace(
+            /&/g,
+            "&amp;"
+        )
+
+        .replace(
+            /</g,
+            "&lt;"
+        )
+
+        .replace(
+            />/g,
+            "&gt;"
+        )
+
+        .replace(
+            /"/g,
+            "&quot;"
+        )
+
+        .replace(
+            /'/g,
+            "&#039;"
+        );
+
+}
+
+
+function escapeJS(value) {
+
+    return String(value)
+        .replace(
+            /\\/g,
+            "\\\\"
+        )
+        .replace(
+            /'/g,
+            "\\'"
+        );
+
+}
+
+
+/* =========================================================
+   INITIAL LOAD
+========================================================= */
+
+loadExams();
+document.addEventListener("visibilitychange", function () {
+
+    console.log(
+        "PROCTIFY TAB TEST:",
+        document.visibilityState
+    );
+
+});
+</script>
+
+
+</body>
+
+</html>

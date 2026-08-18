@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>PROCTIFY — Student Dashboard</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+
+        .student-page {
+            max-width: 1150px;
+            margin: 0 auto;
+        }
+
+        /* =====================================================
+           HEADER
+        ===================================================== */
+
+        .student-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 28px;
+        }
+
+        .student-profile {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+        }
+
+        .student-avatar-large {
+            width: 46px;
+            height: 46px;
+            border-radius: 15px;
+            background: #e9e2f1;
+            color: #6f6086;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+        }
+
+        .student-profile-name {
+            font-size: 13px;
+            font-weight: 700;
+            color: #292927;
+        }
+
+        .student-profile-id {
+            margin-top: 3px;
+            font-size: 9px;
+            color: #999990;
+            letter-spacing: .7px;
+        }
+
+        /* =====================================================
+           MONITORING STATUS
+        ===================================================== */
+
+        .student-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 9px 13px;
+            border-radius: 20px;
+            background: #e2f1eb;
+            color: #37745e;
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+
+        .student-status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #45bd91;
+            box-shadow: 0 0 8px rgba(69,189,145,.5);
+        }
+
+        /* =====================================================
+           SECTION
+        ===================================================== */
+
+        .section-title {
+            margin-top: 32px;
+            margin-bottom: 18px;
+        }
+
+        .section-title h2 {
+            margin-top: 6px;
+            font-size: 22px;
+            color: #292927;
+        }
+
+        .section-title p {
+            margin-top: 5px;
+            font-size: 11px;
+            color: #888880;
+        }
+
+        /* =====================================================
+           EXAM GRID
+        ===================================================== */
+
+        .exam-grid {
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fill, minmax(300px, 1fr));
+            gap: 18px;
+        }
+
+        .student-exam-card {
+            background: rgba(255,255,255,.9);
+            border: 1px solid #e7e7e0;
+            border-radius: 24px;
+            padding: 24px;
+            box-shadow:
+                0 12px 35px rgba(55,55,45,.06);
+            transition: .2s ease;
+        }
+
+        .student-exam-card:hover {
+            transform: translateY(-3px);
+            box-shadow:
+                0 16px 40px rgba(55,55,45,.09);
+        }
+
+        .exam-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .exam-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 13px;
+            background: #eee9f5;
+            color: #75658c;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .exam-icon svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .exam-status {
+            padding: 6px 10px;
+            border-radius: 20px;
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+        .exam-status.active {
+            background: #dcefe7;
+            color: #37745e;
+        }
+
+        .exam-status.scheduled {
+            background: #eee9f5;
+            color: #75658c;
+        }
+
+        .start-exam-button:disabled {
+            background: #e8e8e2;
+            color: #999990;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .exam-name {
+            margin-top: 20px;
+            font-size: 18px;
+            font-weight: 700;
+            color: #292927;
+        }
+
+        .exam-subject {
+            margin-top: 5px;
+            font-size: 11px;
+            color: #888880;
+        }
+
+        .exam-info {
+            display: flex;
+            gap: 18px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .exam-info-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 10px;
+            color: #77776f;
+        }
+
+        .exam-info-item svg {
+            width: 13px;
+            height: 13px;
+        }
+
+        .start-exam-button {
+            width: 100%;
+            margin-top: 22px;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 12px;
+            background: #292927;
+            color: white;
+            font-family: inherit;
+            font-size: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: .2s ease;
+        }
+
+        .start-exam-button:hover {
+            transform: translateY(-2px);
+            box-shadow:
+                0 8px 18px rgba(0,0,0,.12);
+        }
+
+        /* =====================================================
+           EMPTY STATE
+        ===================================================== */
+
+        .empty-exams {
+            padding: 55px 20px;
+            text-align: center;
+            border: 1px dashed #d8d8d0;
+            border-radius: 20px;
+            color: #999990;
+            font-size: 12px;
+            background: rgba(255,255,255,.45);
+        }
+
+        .empty-icon {
+            width: 45px;
+            height: 45px;
+            margin: 0 auto 12px;
+            border-radius: 14px;
+            background: #eeeeea;
+            color: #8a8a82;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .empty-icon svg {
+            width: 20px;
+        }
+
+        /* =====================================================
+           FOOTER
+        ===================================================== */
+
+        .student-footer {
+            margin-top: 40px;
+            padding: 20px 0;
+            border-top: 1px solid #e5e5df;
+            display: flex;
+            justify-content: space-between;
+            font-size: 8px;
+            letter-spacing: 1px;
+            color: #999990;
+        }
+
+        @media(max-width: 700px) {
+
+            .student-header {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .exam-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .student-footer {
+                flex-direction: column;
+                gap: 8px;
+            }
+
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+
+<!-- =========================================================
+     BACKGROUND
+========================================================= -->
+
+<div class="background-art">
+
+    <div class="blob blob-one"></div>
+    <div class="blob blob-two"></div>
+    <div class="blob blob-three"></div>
+
+</div>
+
+
+<div class="student-page">
+
+
+    <!-- =====================================================
+         HEADER
+    ====================================================== -->
+
+    <header class="topbar">
+
+        <div>
+
+            <div class="eyebrow">
+                PROCTIFY / STUDENT CONSOLE
+            </div>
+
+            <h1>
+                Welcome to your examination.
+            </h1>
+
+            <p class="subtitle">
+                Select an available examination to continue.
+            </p>
+
+        </div>
+
+
+        <div class="student-profile">
+
+            <div class="student-avatar-large">
+                S
+            </div>
+
+            <div>
+
+                <div class="student-profile-name">
+                    Student 01
+                </div>
+
+                <div class="student-profile-id">
+                    STUDENT_001
+                </div>
+
+            </div>
+
+        </div>
+
+    </header>
+
+
+    <!-- =====================================================
+         MONITORING READY
+    ====================================================== -->
+
+    <div class="student-status">
+
+        <span class="student-status-dot"></span>
+
+        PROCTIFY MONITORING READY
+
+    </div>
+
+
+    <!-- =====================================================
+         AVAILABLE EXAMS
+    ====================================================== -->
+
+    <section>
+
+        <div class="section-title">
+
+            <div class="eyebrow">
+                EXAMINATION
+            </div>
+
+            <h2>
+                Available Exams
+            </h2>
+
+            <p>
+                Choose an active examination assigned to you.
+            </p>
+
+        </div>
+
+
+        <div
+            id="examGrid"
+            class="exam-grid">
+        </div>
+
+
+        <div
+            id="emptyExams"
+            class="empty-exams"
+            style="display:none;">
+
+            <div class="empty-icon">
+
+                <i data-lucide="calendar-x"></i>
+
+            </div>
+
+            <strong>
+                No active examinations
+            </strong>
+
+            <div style="margin-top:6px;">
+                Please check again when an examination is available.
+            </div>
+
+        </div>
+
+    </section>
+
+
+    <!-- =====================================================
+         FOOTER
+    ====================================================== -->
+
+    <footer class="student-footer">
+
+        <span>
+            PROCTIFY
+        </span>
+
+        <span>
+            AI-ASSISTED EXAM INTEGRITY
+        </span>
+
+        <span>
+            SYSTEM ONLINE
+        </span>
+
+    </footer>
+
+
+</div>
+
+
+<script>
+
+lucide.createIcons();
+
+
+/* =========================================================
+   LOAD AVAILABLE EXAMS
+========================================================= */
+
+async function loadStudentExams() {
+
+    const examGrid =
+        document.getElementById(
+            "examGrid"
+        );
+
+    const emptyExams =
+        document.getElementById(
+            "emptyExams"
+        );
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/exams",
+                {
+                    cache: "no-store"
+                }
+            );
+
+        if (!response.ok) {
+            throw new Error(
+                "Unable to load exams"
+            );
+        }
+
+        const data =
+            await response.json();
+
+        if (
+            !data ||
+            data.success !== true ||
+            !Array.isArray(data.exams)
+        ) {
+            throw new Error(
+                "Invalid exam response"
+            );
+        }
+
+        examGrid.innerHTML = "";
+
+        /*
+         * Show both scheduled and active exams.
+         * Scheduled exams are visible but cannot be started.
+         */
+        const availableExams =
+            data.exams.filter(
+                exam => {
+
+                    const status =
+                        String(
+                            exam.status || ""
+                        ).toUpperCase();
+
+                    return (
+                        status === "ACTIVE" ||
+                        status === "SCHEDULED"
+                    );
+                }
+            );
+
+        if (
+            availableExams.length === 0
+        ) {
+            emptyExams.style.display =
+                "block";
+            return;
+        }
+
+        emptyExams.style.display =
+            "none";
+
+        availableExams.forEach(
+            exam => {
+
+                const status =
+                    String(
+                        exam.status || ""
+                    ).toUpperCase();
+
+                const isActive =
+                    status === "ACTIVE";
+
+                if (!window.scheduledExamTimes) {
+                    window.scheduledExamTimes = {};
+                }
+
+                if (
+                    status === "SCHEDULED" &&
+                    exam.scheduled_start
+                ) {
+                    window.scheduledExamTimes[exam.exam_id] =
+                        exam.scheduled_start;
+                }
+
+                const card =
+                    document.createElement(
+                        "article"
+                    );
+
+                card.className =
+                    "student-exam-card";
+
+                const scheduledText =
+                    status === "SCHEDULED" &&
+                    exam.scheduled_start
+                        ? `
+                            <div class="exam-info-item scheduled-countdown"
+                                 id="countdown-${escapeJS(exam.exam_id)}"
+                                 style="margin-top:18px; width:100%;">
+                                <i data-lucide="calendar-clock"></i>
+                                Starts in ${formatCountdown(exam.scheduled_start)}
+                            </div>
+                          `
+                        : "";
+
+                const buttonHTML =
+                    isActive
+                        ? `
+                            <button
+                                type="button"
+                                class="start-exam-button"
+                                onclick="startExam(
+                                    '${escapeJS(
+                                        exam.exam_id
+                                    )}'
+                                )">
+
+                                Start Exam →
+
+                            </button>
+                          `
+                        : `
+                            <button
+                                type="button"
+                                class="start-exam-button"
+                                disabled>
+
+                                Exam Scheduled
+
+                            </button>
+                          `;
+
+                card.innerHTML = `
+
+                    <div class="exam-top">
+
+                        <div class="exam-icon">
+                            <i data-lucide="file-text"></i>
+                        </div>
+
+                        <span class="exam-status ${
+                            isActive
+                                ? "active"
+                                : "scheduled"
+                        }">
+                            ${isActive ? "ACTIVE" : "SCHEDULED"}
+                        </span>
+
+                    </div>
+
+                    <div class="exam-name">
+                        ${escapeHTML(
+                            exam.exam_name ||
+                            "Untitled Exam"
+                        )}
+                    </div>
+
+                    <div class="exam-subject">
+                        ${escapeHTML(
+                            exam.subject ||
+                            "No subject"
+                        )}
+                    </div>
+
+                    <div class="exam-info">
+
+                        <div class="exam-info-item">
+                            <i data-lucide="clock"></i>
+                            ${Number(
+                                exam.duration || 0
+                            )} min
+                        </div>
+
+                        <div class="exam-info-item">
+                            <i data-lucide="list"></i>
+                            ${Number(
+                                exam.question_count || 0
+                            )} questions
+                        </div>
+
+                    </div>
+
+                    ${scheduledText}
+
+                    ${buttonHTML}
+
+                `;
+
+                examGrid.appendChild(
+                    card
+                );
+            }
+        );
+
+        lucide.createIcons();
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Student exam loading error:",
+            error
+        );
+
+        examGrid.innerHTML = "";
+
+        emptyExams.style.display =
+            "block";
+
+        emptyExams.innerHTML = `
+
+            <div class="empty-icon">
+                <i data-lucide="triangle-alert"></i>
+            </div>
+
+            <strong>
+                Unable to load examinations
+            </strong>
+
+            <div style="margin-top:6px;">
+                Please try again.
+            </div>
+
+        `;
+
+        lucide.createIcons();
+    }
+
+}
+
+function formatScheduledTime(value) {
+
+    const date =
+        new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return "scheduled time";
+    }
+
+    return date.toLocaleString([], {
+        dateStyle: "medium",
+        timeStyle: "short"
+    });
+}
+
+
+function formatCountdown(value) {
+
+    const target =
+        new Date(value).getTime();
+
+    if (Number.isNaN(target)) {
+        return "scheduled time";
+    }
+
+    const remaining =
+        Math.max(0, target - Date.now());
+
+    const totalSeconds =
+        Math.ceil(remaining / 1000);
+
+    const days =
+        Math.floor(totalSeconds / 86400);
+
+    const hours =
+        Math.floor((totalSeconds % 86400) / 3600);
+
+    const minutes =
+        Math.floor((totalSeconds % 3600) / 60);
+
+    const seconds =
+        totalSeconds % 60;
+
+    if (days > 0) {
+        return `${days}d ${String(hours).padStart(2, "0")}h`;
+    }
+
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+
+function updateScheduledCountdowns() {
+
+    document.querySelectorAll(
+        ".scheduled-countdown"
+    ).forEach(element => {
+
+        const examId =
+            element.id.replace(
+                "countdown-",
+                ""
+            );
+
+        const exam =
+            window.scheduledExamTimes
+                ? window.scheduledExamTimes[examId]
+                : null;
+
+        if (!exam) {
+            return;
+        }
+
+        const remaining =
+            new Date(exam).getTime() - Date.now();
+
+        if (remaining <= 0) {
+            element.innerHTML = `
+                <i data-lucide="clock"></i>
+                Starting exam...
+            `;
+
+            /*
+             * Ask Flask for the latest exam status.
+             * Once the scheduled time is reached,
+             * the backend changes SCHEDULED → ACTIVE.
+             */
+            loadStudentExams();
+            return;
+        }
+
+        element.innerHTML = `
+            <i data-lucide="calendar-clock"></i>
+            Starts in ${formatCountdown(exam)}
+        `;
+    });
+
+    lucide.createIcons();
+}
+
+
+/* =========================================================
+   START EXAM
+========================================================= */
+
+function startExam(examId) {
+
+    if (!examId) {
+        return;
+    }
+
+    window.location.href =
+        "/student/precheck/" +
+        encodeURIComponent(
+            examId
+        );
+}
+
+/* =========================================================
+   HTML ESCAPING
+========================================================= */
+
+function escapeHTML(value) {
+
+    return String(value)
+
+        .replace(
+            /&/g,
+            "&amp;"
+        )
+
+        .replace(
+            /</g,
+            "&lt;"
+        )
+
+        .replace(
+            />/g,
+            "&gt;"
+        )
+
+        .replace(
+            /"/g,
+            "&quot;"
+        )
+
+        .replace(
+            /'/g,
+            "&#039;"
+        );
+
+}
+
+
+function escapeJS(value) {
+
+    return String(value)
+
+        .replace(
+            /\\/g,
+            "\\\\"
+        )
+
+        .replace(
+            /'/g,
+            "\\'"
+        );
+
+}
+
+
+/* =========================================================
+   INITIAL LOAD
+========================================================= */
+
+loadStudentExams();
+
+setInterval(
+    updateScheduledCountdowns,
+    1000
+);
+
+</script>
+
+
+</body>
+
+</html>

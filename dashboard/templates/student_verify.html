@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>PROCTIFY — Face Verification</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+    <style>
+
+        .verify-page {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 25px;
+        }
+
+        .verify-container {
+            width: 100%;
+            max-width: 560px;
+        }
+
+        .verify-header {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+
+        .verify-logo {
+            width: 55px;
+            height: 55px;
+            margin: 0 auto 15px;
+            border-radius: 18px;
+            background: #292927;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            font-weight: 700;
+        }
+
+        .verify-header h1 {
+            font-size: 25px;
+            color: #292927;
+        }
+
+        .verify-header p {
+            margin-top: 7px;
+            font-size: 11px;
+            color: #898981;
+        }
+
+        .verify-card {
+            background: rgba(255,255,255,.9);
+            border: 1px solid #e5e5df;
+            border-radius: 27px;
+            padding: 25px;
+            box-shadow:
+                0 20px 50px rgba(55,55,45,.08);
+        }
+
+        .camera-box {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            overflow: hidden;
+            border-radius: 20px;
+            background: #20211f;
+        }
+
+        #cameraPreview {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .camera-overlay {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .face-frame {
+            width: 48%;
+            aspect-ratio: 3 / 4;
+            border: 2px solid rgba(255,255,255,.85);
+            border-radius: 45%;
+            box-shadow:
+                0 0 0 999px rgba(0,0,0,.12);
+        }
+
+        .camera-status {
+            margin-top: 18px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            background: #f3f4ee;
+            text-align: center;
+            font-size: 10px;
+            color: #77776f;
+        }
+
+        .camera-status.ready {
+            background: #dcefe7;
+            color: #37745e;
+        }
+
+        .camera-status.error {
+            background: #f4dddd;
+            color: #7a4545;
+        }
+
+        .verify-button {
+            width: 100%;
+            margin-top: 15px;
+            border: none;
+            border-radius: 13px;
+            padding: 14px;
+            background: #292927;
+            color: white;
+            font-family: inherit;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .verify-button:disabled {
+            background: #d5d5cf;
+            color: #888880;
+            cursor: not-allowed;
+        }
+
+        .verification-note {
+            margin-top: 15px;
+            text-align: center;
+            font-size: 9px;
+            line-height: 1.5;
+            color: #999990;
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+<div class="background-art">
+
+    <div class="blob blob-one"></div>
+    <div class="blob blob-two"></div>
+    <div class="blob blob-three"></div>
+
+</div>
+
+
+<div class="verify-page">
+
+    <div class="verify-container">
+
+
+        <!-- =================================================
+             HEADER
+        ================================================== -->
+
+        <div class="verify-header">
+
+            <div class="verify-logo">
+                P
+            </div>
+
+            <h1>
+                Face Verification
+            </h1>
+
+            <p>
+                Verify your identity before entering the examination.
+            </p>
+
+        </div>
+
+
+        <!-- =================================================
+             VERIFICATION CARD
+        ================================================== -->
+
+        <div class="verify-card">
+
+
+            <div class="camera-box">
+
+                <video
+                    id="cameraPreview"
+                    autoplay
+                    muted
+                    playsinline>
+                </video>
+
+
+                <div class="camera-overlay">
+
+                    <div class="face-frame"></div>
+
+                </div>
+
+            </div>
+
+
+            <div
+                id="cameraStatus"
+                class="camera-status">
+
+                Requesting camera access...
+
+            </div>
+
+
+            <button
+                id="verifyButton"
+                class="verify-button"
+                disabled
+                onclick="startVerification()">
+
+                Verify Face
+
+            </button>
+
+
+            <div class="verification-note">
+
+                Camera access is required for examination
+                verification and monitoring.
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+const video =
+    document.getElementById(
+        "cameraPreview"
+    );
+
+const statusBox =
+    document.getElementById(
+        "cameraStatus"
+    );
+
+const verifyButton =
+    document.getElementById(
+        "verifyButton"
+    );
+
+
+let cameraStream = null;
+
+
+/* =========================================================
+   START CAMERA
+========================================================= */
+
+async function startCamera() {
+
+    try {
+
+        cameraStream =
+            await navigator.mediaDevices.getUserMedia({
+
+                video: true,
+
+                audio: false
+
+            });
+
+
+        video.srcObject =
+            cameraStream;
+
+
+        statusBox.innerText =
+            "Camera ready. Position your face inside the frame.";
+
+        statusBox.classList.add(
+            "ready"
+        );
+
+
+        verifyButton.disabled =
+            false;
+
+    }
+
+
+    catch (error) {
+
+        console.error(
+            "Camera error:",
+            error
+        );
+
+
+        statusBox.innerText =
+            "Camera access is required. Please allow camera permission.";
+
+        statusBox.classList.add(
+            "error"
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   VERIFICATION
+========================================================= */
+
+async function startVerification() {
+
+    if (!cameraStream) {
+
+        statusBox.innerText =
+            "Camera is not available.";
+
+        return;
+
+    }
+
+
+    verifyButton.disabled = true;
+
+    statusBox.classList.remove(
+        "ready",
+        "error"
+    );
+
+    statusBox.innerText =
+        "Verifying face...";
+
+
+    try {
+
+        /*
+         * Capture the current camera frame.
+         */
+
+        const canvas =
+            document.createElement(
+                "canvas"
+            );
+
+
+        canvas.width =
+            video.videoWidth;
+
+        canvas.height =
+            video.videoHeight;
+
+
+        const context =
+            canvas.getContext(
+                "2d"
+            );
+
+
+        context.drawImage(
+            video,
+            0,
+            0,
+            canvas.width,
+            canvas.height
+        );
+
+
+        const image =
+            canvas.toDataURL(
+                "image/jpeg",
+                0.85
+            );
+
+
+        /*
+         * Student ID currently comes
+         * from this demo's student profile.
+         */
+
+        const studentId =
+            "STUDENT_001";
+
+
+        /*
+         * Send camera frame to Flask.
+         */
+
+        const response =
+            await fetch(
+                "/api/student/verify-face",
+                {
+
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+
+                        student_id:
+                            studentId,
+
+                        image:
+                            image
+
+                    })
+
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        /*
+         * Verification successful.
+         */
+
+        if (
+            response.ok &&
+            data.success &&
+            data.verified
+        ) {
+
+            statusBox.innerText =
+                "Face verified successfully.";
+
+            statusBox.classList.add(
+                "ready"
+            );
+
+
+            /*
+             * Stop camera before leaving
+             * verification page.
+             */
+
+            if (cameraStream) {
+
+                cameraStream
+                    .getTracks()
+                    .forEach(
+                        track =>
+                            track.stop()
+                    );
+
+            }
+
+
+            /*
+             * Continue to student dashboard.
+             */
+
+            setTimeout(
+                function () {
+
+                    window.location.href =
+                        "/student";
+
+                },
+                700
+            );
+
+
+            return;
+
+        }
+
+
+        /*
+         * Face was not verified.
+         */
+
+        statusBox.innerText =
+            data.message ||
+            "Face verification failed. Please try again.";
+
+        statusBox.classList.add(
+            "error"
+        );
+
+
+        verifyButton.disabled =
+            false;
+
+    }
+
+
+    catch (error) {
+
+        console.error(
+            "Verification error:",
+            error
+        );
+
+
+        statusBox.innerText =
+            "Unable to complete face verification.";
+
+        statusBox.classList.add(
+            "error"
+        );
+
+
+        verifyButton.disabled =
+            false;
+
+    }
+
+}
+
+/* =========================================================
+   START
+========================================================= */
+
+startCamera();
+
+</script>
+
+</body>
+
+</html>

@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>PROCTIFY — Exam Details</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+
+        .details-page {
+            max-width: 1050px;
+            margin: 0 auto;
+        }
+
+        .details-card {
+            margin-top: 25px;
+            background: rgba(255,255,255,.84);
+            border: 1px solid rgba(80,80,80,.08);
+            border-radius: 26px;
+            padding: 30px;
+            box-shadow:
+                0 15px 40px rgba(70,70,60,.07);
+        }
+
+        .details-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 20px;
+        }
+
+        .details-label {
+            font-size: 9px;
+            letter-spacing: 1.5px;
+            color: #92928b;
+            font-weight: 700;
+        }
+
+        .details-title {
+            margin-top: 8px;
+            font-size: 28px;
+            font-weight: 700;
+            color: #292927;
+        }
+
+        .details-subject {
+            margin-top: 5px;
+            color: #85857e;
+            font-size: 12px;
+        }
+
+        .details-status {
+            padding: 8px 13px;
+            border-radius: 20px;
+            background: #eeeeea;
+            color: #77776f;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+
+        .details-status.active {
+            background: #dcefe7;
+            color: #37745e;
+        }
+
+        .exam-info-grid {
+            display: grid;
+            grid-template-columns:
+                repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 28px;
+        }
+
+        .info-box {
+            background: #f7f7f3;
+            border-radius: 16px;
+            padding: 17px;
+        }
+
+        .info-label {
+            font-size: 8px;
+            letter-spacing: 1px;
+            color: #999990;
+        }
+
+        .info-value {
+            margin-top: 6px;
+            font-size: 17px;
+            font-weight: 700;
+            color: #292927;
+        }
+
+        .questions-heading {
+            margin-top: 32px;
+            margin-bottom: 15px;
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .question-card {
+            background: #f8f8f4;
+            border-radius: 18px;
+            padding: 20px;
+            margin-bottom: 12px;
+        }
+
+        .question-number {
+            font-size: 8px;
+            letter-spacing: 1.3px;
+            font-weight: 700;
+            color: #8776a8;
+        }
+
+        .question-text {
+            margin-top: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #292927;
+        }
+
+        .options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 9px;
+            margin-top: 15px;
+        }
+
+        .option {
+            padding: 11px 13px;
+            border-radius: 11px;
+            background: white;
+            font-size: 11px;
+            color: #66665f;
+        }
+
+        .option.correct {
+            background: #d9eee8;
+            color: #315c4b;
+            font-weight: 700;
+        }
+
+        .back-button {
+            margin-top: 25px;
+            border: none;
+            border-radius: 12px;
+            padding: 11px 17px;
+            background: #292927;
+            color: white;
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: 700;
+        }
+
+        .loading,
+        .error-message {
+            margin-top: 25px;
+            padding: 35px;
+            text-align: center;
+            background: rgba(255,255,255,.8);
+            border-radius: 20px;
+            color: #888880;
+            font-size: 12px;
+        }
+
+        @media(max-width: 700px) {
+
+            .exam-info-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .options {
+                grid-template-columns: 1fr;
+            }
+
+            .details-top {
+                flex-direction: column;
+            }
+
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+<div class="background-art">
+
+    <div class="blob blob-one"></div>
+    <div class="blob blob-two"></div>
+    <div class="blob blob-three"></div>
+
+</div>
+
+
+<div class="details-page">
+
+    <!-- =====================================================
+         HEADER
+    ====================================================== -->
+
+    <header class="topbar">
+
+        <div>
+
+            <div class="eyebrow">
+                EXAM MANAGEMENT
+            </div>
+
+            <h1>
+                Exam Details
+            </h1>
+
+            <p class="subtitle">
+                Review examination configuration and questions.
+            </p>
+
+        </div>
+
+
+        <div class="top-right">
+
+            <div class="live-pill">
+                <span class="live-dot"></span>
+                PROCTIFY
+            </div>
+
+        </div>
+
+    </header>
+
+
+    <!-- =====================================================
+         CONTENT
+    ====================================================== -->
+
+    <div id="loading"
+         class="loading">
+
+        Loading exam...
+
+    </div>
+
+
+    <div id="examContent"
+         style="display:none;">
+
+        <section class="details-card">
+
+            <div class="details-top">
+
+                <div>
+
+                    <div class="details-label">
+                        EXAMINATION
+                    </div>
+
+                    <div id="examName"
+                         class="details-title">
+                    </div>
+
+                    <div id="examSubject"
+                         class="details-subject">
+                    </div>
+
+                </div>
+
+
+                <div id="examStatus"
+                     class="details-status">
+                </div>
+
+            </div>
+
+
+            <!-- =================================================
+                 EXAM INFORMATION
+            ================================================== -->
+
+            <div class="exam-info-grid">
+
+                <div class="info-box">
+
+                    <div class="info-label">
+                        DURATION
+                    </div>
+
+                    <div id="examDuration"
+                         class="info-value">
+                    </div>
+
+                </div>
+
+
+                <div class="info-box">
+
+                    <div class="info-label">
+                        QUESTIONS
+                    </div>
+
+                    <div id="examQuestionCount"
+                         class="info-value">
+                    </div>
+
+                </div>
+
+
+                <div class="info-box">
+
+                    <div class="info-label">
+                        EXAM ID
+                    </div>
+
+                    <div id="examId"
+                         class="info-value"
+                         style="font-size:11px;">
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- =================================================
+                 QUESTIONS
+            ================================================== -->
+
+            <div class="questions-heading">
+                Questions
+            </div>
+
+
+            <div id="questionsContainer">
+            </div>
+
+
+            <button
+                class="back-button"
+                onclick="window.location.href='/exams'">
+
+                ← Back to Exams
+
+            </button>
+
+        </section>
+
+    </div>
+
+
+    <div id="errorMessage"
+         class="error-message"
+         style="display:none;">
+
+        Unable to load exam details.
+
+    </div>
+
+</div>
+
+
+<script>
+
+lucide.createIcons();
+
+
+const examId =
+    "{{ exam_id }}";
+
+
+/* =========================================================
+   LOAD EXAM
+========================================================= */
+
+async function loadExam() {
+
+    const loading =
+        document.getElementById(
+            "loading"
+        );
+
+    const content =
+        document.getElementById(
+            "examContent"
+        );
+
+    const error =
+        document.getElementById(
+            "errorMessage"
+        );
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/exams/" +
+                encodeURIComponent(
+                    examId
+                ),
+                {
+                    cache: "no-store"
+                }
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                "Exam request failed"
+            );
+
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            !data ||
+            data.success !== true ||
+            !data.exam
+        ) {
+
+            throw new Error(
+                "Invalid exam data"
+            );
+
+        }
+
+
+        const exam =
+            data.exam;
+
+
+        /*
+         * Basic information
+         */
+
+        document.getElementById(
+            "examName"
+        ).innerText =
+            exam.exam_name ||
+            "Untitled Exam";
+
+
+        document.getElementById(
+            "examSubject"
+        ).innerText =
+            exam.subject ||
+            "No subject";
+
+
+        document.getElementById(
+            "examDuration"
+        ).innerText =
+            (
+                exam.duration || 0
+            ) +
+            " minutes";
+
+
+        document.getElementById(
+            "examQuestionCount"
+        ).innerText =
+            exam.question_count ||
+            0;
+
+
+        document.getElementById(
+            "examId"
+        ).innerText =
+            exam.exam_id ||
+            examId;
+
+
+        /*
+         * Status
+         */
+
+        const status =
+            String(
+                exam.status ||
+                "UNKNOWN"
+            ).toUpperCase();
+
+
+        const statusElement =
+            document.getElementById(
+                "examStatus"
+            );
+
+
+        statusElement.innerText =
+            status;
+
+
+        if (
+            status === "ACTIVE"
+        ) {
+
+            statusElement.classList.add(
+                "active"
+            );
+
+        }
+
+
+        /*
+         * Questions
+         */
+
+        const questionsContainer =
+            document.getElementById(
+                "questionsContainer"
+            );
+
+
+        questionsContainer.innerHTML =
+            "";
+
+
+        const questions =
+            Array.isArray(
+                exam.questions
+            )
+                ? exam.questions
+                : [];
+
+
+        questions.forEach(
+            (
+                question,
+                index
+            ) => {
+
+                const questionCard =
+                    document.createElement(
+                        "div"
+                    );
+
+                questionCard.className =
+                    "question-card";
+
+
+                let optionsHTML =
+                    "";
+
+
+                [
+                    "A",
+                    "B",
+                    "C",
+                    "D"
+                ].forEach(
+                    letter => {
+
+                        const isCorrect =
+                            question.correct_answer ===
+                            letter;
+
+
+                        optionsHTML += `
+
+                            <div
+                                class="option ${
+                                    isCorrect
+                                        ? "correct"
+                                        : ""
+                                }">
+
+                                ${letter}.
+                                ${escapeHTML(
+                                    question.options?.[letter] ||
+                                    ""
+                                )}
+
+                            </div>
+
+                        `;
+
+                    }
+                );
+
+
+                questionCard.innerHTML = `
+
+                    <div class="question-number">
+                        QUESTION ${index + 1}
+                    </div>
+
+                    <div class="question-text">
+                        ${escapeHTML(
+                            question.question ||
+                            ""
+                        )}
+                    </div>
+
+                    <div class="options">
+                        ${optionsHTML}
+                    </div>
+
+                `;
+
+
+                questionsContainer.appendChild(
+                    questionCard
+                );
+
+            }
+        );
+
+
+        loading.style.display =
+            "none";
+
+        content.style.display =
+            "block";
+
+
+        lucide.createIcons();
+
+    }
+
+
+    catch (err) {
+
+        console.error(
+            "Exam details error:",
+            err
+        );
+
+
+        loading.style.display =
+            "none";
+
+        error.style.display =
+            "block";
+
+    }
+
+}
+
+
+/* =========================================================
+   HTML ESCAPING
+========================================================= */
+
+function escapeHTML(value) {
+
+    return String(value)
+
+        .replace(
+            /&/g,
+            "&amp;"
+        )
+
+        .replace(
+            /</g,
+            "&lt;"
+        )
+
+        .replace(
+            />/g,
+            "&gt;"
+        )
+
+        .replace(
+            /"/g,
+            "&quot;"
+        )
+
+        .replace(
+            /'/g,
+            "&#039;"
+        );
+
+}
+
+
+/* =========================================================
+   START
+========================================================= */
+
+loadExam();
+
+</script>
+
+</body>
+
+</html>

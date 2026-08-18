@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PROCTIFY • Live Student Monitor</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+
+<body>
+
+<main class="monitor-page">
+
+    <!-- TOP BAR -->
+    <header class="monitor-header">
+
+        <div>
+            <div class="eyebrow">LIVE STUDENT MONITOR</div>
+            <h1 id="studentName">{{ student.student_id }}</h1>
+            <p>{{ student.exam_name }}</p>
+        </div>
+
+        <a href="/" class="view-button">
+            ← Dashboard
+        </a>
+
+    </header>
+
+
+    <!-- TRUST SCORE -->
+    <section class="overview">
+
+        <div class="stat-card mint">
+            <div class="card-label">TRUST SCORE</div>
+            <div class="stat-number" id="trustScore">
+                {{ student.trust_score }}
+            </div>
+        </div>
+
+        <div class="stat-card lavender">
+            <div class="card-label">RISK</div>
+            <div class="stat-number" id="riskLevel">
+                {{ student.risk_level }}
+            </div>
+        </div>
+
+        <div class="stat-card pink-card">
+            <div class="card-label">LAST EVENT</div>
+            <div class="stat-number" id="lastEvent" style="font-size:22px;">
+                {{ student.last_event }}
+            </div>
+        </div>
+
+    </section>
+
+
+    <!-- MAIN GRID -->
+    <section class="workspace">
+
+        <!-- CAMERA PLACEHOLDER -->
+        <div class="students-section">
+
+            <div class="section-heading">
+                <h2>Live Camera Feed</h2>
+
+                <span style="
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    padding: 5px 10px;
+                    border-radius: 20px;
+                    font-size: 12px;
+                    font-weight: 700;
+                    background: #fee2e2;
+                    color: #dc2626;
+                ">
+                    <span style="
+                        width: 7px;
+                        height: 7px;
+                        border-radius: 50%;
+                        background: #dc2626;
+                    "></span>
+                    LIVE
+                </span>
+            </div>
+
+            <div class="camera-placeholder">
+
+                <img
+                    id="studentCamera"
+                    src=""
+                    alt="Live Student Camera"
+                    style="
+                        width: 100%;
+                        height: 100%;
+                        object-fit: cover;
+                        display: block;
+                    "
+                >
+
+            </div>
+
+        </div>
+
+
+        <!-- LIVE STATUS -->
+        <aside class="attention-panel">
+
+            <div class="section-heading compact">
+                <h2>Live Status</h2>
+            </div>
+
+            <div class="attention-student">
+                <div class="attention-info">
+                    <strong>Phone</strong>
+                    <span id="phoneStatus">{{ student.phone }}</span>
+                </div>
+            </div>
+
+            <div class="attention-student">
+                <div class="attention-info">
+                    <strong>Persons</strong>
+                    <span id="personCount">{{ student.person_count }}</span>
+                </div>
+            </div>
+
+            <div class="attention-student">
+                <div class="attention-info">
+                    <strong>Gaze</strong>
+                    <span id="gazeStatus">{{ student.gaze }}</span>
+                </div>
+            </div>
+
+            <div class="attention-student">
+                <div class="attention-info">
+                    <strong>Head</strong>
+                    <span id="headStatus">{{ student.head_direction }}</span>
+                </div>
+            </div>
+
+            <div class="attention-student">
+                <div class="attention-info">
+                    <strong>Audio</strong>
+                    <span id="audioStatus">{{ student.audio }}</span>
+                </div>
+            </div>
+
+        </aside>
+
+    </section>
+
+</main>
+
+<script>
+
+lucide.createIcons();
+
+const STUDENT_ID = "{{ student.student_id }}";
+
+async function refreshStudent(){
+
+    const response =
+        await fetch("/api/student/" + STUDENT_ID);
+
+    if(!response.ok) return;
+
+    const data = await response.json();
+
+    const s = data.student;
+
+    document.getElementById("trustScore").innerText = s.trust_score;
+    document.getElementById("riskLevel").innerText = s.risk_level;
+    document.getElementById("lastEvent").innerText = s.last_event;
+
+    document.getElementById("phoneStatus").innerText =
+        s.phone ? "Detected" : "Clear";
+
+    document.getElementById("personCount").innerText = s.person_count;
+    document.getElementById("gazeStatus").innerText = s.gaze;
+    document.getElementById("headStatus").innerText = s.head_direction;
+    document.getElementById("audioStatus").innerText = s.audio;
+}
+
+setInterval(refreshStudent, 2000);
+
+</script>
+<script>
+
+    /* =====================================================
+       STUDENT-SPECIFIC CAMERA STREAM
+    ===================================================== */
+
+    const studentId =
+        "{{ student.student_id }}";
+
+
+    let studentNumber = 1;
+
+
+    /*
+     * STUDENT_001 → 1
+     * STUDENT_002 → 2
+     * STUDENT_003 → 3
+     */
+
+    const match =
+        String(studentId).match(
+            /(\d+)$/
+        );
+
+
+    if (match) {
+
+        studentNumber =
+            parseInt(
+                match[1],
+                10
+            );
+
+    }
+
+
+    /*
+     * Video ports:
+     *
+     * STUDENT_001 → 5001
+     * STUDENT_002 → 5002
+     * STUDENT_003 → 5003
+     */
+
+    const videoPort =
+        5000 + studentNumber;
+
+
+    const camera =
+        document.getElementById(
+            "studentCamera"
+        );
+
+
+    if (camera) {
+
+        camera.src =
+            "http://127.0.0.1:" +
+            videoPort +
+            "/video_feed";
+
+    }
+
+
+    console.log(
+        "PROCTIFY camera:",
+        studentId,
+        "→ port",
+        videoPort
+    );
+
+</script>
+</body>
+</html>

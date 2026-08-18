@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>PROCTIFY — Examination</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+    <style>
+
+        body {
+            margin: 0;
+        }
+
+        .exam-page {
+            min-height: 100vh;
+            padding: 28px;
+            box-sizing: border-box;
+        }
+
+        .exam-container {
+            max-width: 1050px;
+            margin: 0 auto;
+        }
+
+        /* =====================================================
+           HEADER
+        ===================================================== */
+
+        .exam-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+            padding: 18px 22px;
+            background: rgba(255,255,255,.82);
+            border: 1px solid rgba(100,100,100,.08);
+            border-radius: 20px;
+            backdrop-filter: blur(14px);
+        }
+
+        .exam-header-left {
+            min-width: 0;
+        }
+
+        .exam-eyebrow {
+            font-size: 8px;
+            letter-spacing: 1.5px;
+            color: #999990;
+            margin-bottom: 5px;
+        }
+
+        .exam-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #292927;
+        }
+
+        .exam-subject {
+            margin-top: 4px;
+            font-size: 10px;
+            color: #8b8b83;
+        }
+
+        /* =====================================================
+           TIMER
+        ===================================================== */
+
+        .exam-timer {
+            min-width: 110px;
+            text-align: center;
+            padding: 10px 15px;
+            border-radius: 15px;
+            background: #292927;
+            color: white;
+        }
+
+        .timer-label {
+            font-size: 7px;
+            letter-spacing: 1px;
+            opacity: .65;
+        }
+
+        .timer-value {
+            margin-top: 3px;
+            font-size: 19px;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .timer-warning {
+            background: #8d5b4d;
+        }
+
+        /* =====================================================
+           EXAM CONTENT
+        ===================================================== */
+
+        .exam-workspace {
+            margin-top: 22px;
+            display: grid;
+            grid-template-columns: 1fr 250px;
+            gap: 20px;
+            align-items: start;
+        }
+
+        .question-card,
+        .navigation-card {
+            background: rgba(255,255,255,.88);
+            border: 1px solid rgba(100,100,100,.08);
+            border-radius: 22px;
+            backdrop-filter: blur(14px);
+        }
+
+        .question-card {
+            padding: 30px;
+        }
+
+        .question-number {
+            font-size: 9px;
+            letter-spacing: 1.3px;
+            color: #8d8d85;
+            margin-bottom: 14px;
+        }
+
+        .question-text {
+            font-size: 21px;
+            line-height: 1.45;
+            font-weight: 600;
+            color: #292927;
+        }
+
+        /* =====================================================
+           OPTIONS
+        ===================================================== */
+
+        .options {
+            margin-top: 28px;
+            display: grid;
+            gap: 11px;
+        }
+
+        .option {
+
+            display: flex;
+            align-items: center;
+            gap: 13px;
+
+            width: 100%;
+            box-sizing: border-box;
+
+            padding: 15px;
+
+            border: 1px solid #deded8;
+            border-radius: 14px;
+
+            background: rgba(250,250,247,.8);
+
+            cursor: pointer;
+
+            transition:
+                border-color .2s ease,
+                background .2s ease,
+                transform .2s ease;
+        }
+
+        .option:hover {
+            transform: translateY(-1px);
+            border-color: #aaa2b7;
+        }
+
+        .option.selected {
+            border-color: #807196;
+            background: #f0ecf4;
+        }
+
+        .option-letter {
+            width: 32px;
+            height: 32px;
+            flex-shrink: 0;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            border-radius: 10px;
+
+            background: #eeeeea;
+            color: #68685f;
+
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .option.selected .option-letter {
+            background: #807196;
+            color: white;
+        }
+
+        .option-text {
+            font-size: 12px;
+            color: #454540;
+        }
+
+        /* =====================================================
+           NAVIGATION
+        ===================================================== */
+
+        .navigation-card {
+            padding: 20px;
+        }
+
+        .navigation-title {
+            font-size: 9px;
+            letter-spacing: 1.2px;
+            color: #8d8d85;
+            margin-bottom: 14px;
+        }
+
+        .question-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 7px;
+        }
+
+        .question-button {
+            width: 34px;
+            height: 34px;
+
+            border: 1px solid #deded8;
+            border-radius: 9px;
+
+            background: #fafaf7;
+            color: #66665f;
+
+            font-size: 10px;
+            cursor: pointer;
+        }
+
+        .question-button.current {
+            background: #292927;
+            color: white;
+            border-color: #292927;
+        }
+
+        .question-button.answered {
+            background: #e0f0e9;
+            border-color: #c3dfd2;
+            color: #39725f;
+        }
+
+        /* =====================================================
+           ACTIONS
+        ===================================================== */
+
+        .question-actions {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 28px;
+        }
+
+        .exam-action {
+            padding: 12px 18px;
+            border: none;
+            border-radius: 11px;
+            font-family: inherit;
+            font-size: 10px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .previous-button {
+            background: #eeeeea;
+            color: #55554f;
+        }
+
+        .next-button {
+            background: #292927;
+            color: white;
+        }
+
+        .submit-button {
+            width: 100%;
+            margin-top: 22px;
+            padding: 13px;
+            border: none;
+            border-radius: 12px;
+            background: #292927;
+            color: white;
+            font-family: inherit;
+            font-size: 10px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .submit-button:hover,
+        .next-button:hover,
+        .exam-action:hover {
+            transform: translateY(-1px);
+        }
+
+        /* =====================================================
+           STATUS
+        ===================================================== */
+
+        .exam-status {
+            margin-top: 14px;
+            font-size: 9px;
+            text-align: center;
+            color: #999990;
+        }
+
+        .loading-state {
+            padding: 70px 20px;
+            text-align: center;
+            color: #888880;
+        }
+
+        .error-state {
+            padding: 50px 20px;
+            text-align: center;
+            color: #8a4d4d;
+        }
+
+        /* =====================================================
+           RESPONSIVE
+        ===================================================== */
+
+        @media(max-width: 800px) {
+
+            .exam-workspace {
+                grid-template-columns: 1fr;
+            }
+
+            .navigation-card {
+                order: 2;
+            }
+
+            .exam-header {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .exam-timer {
+                width: 100%;
+                box-sizing: border-box;
+            }
+
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+
+<div class="background-art">
+
+    <div class="blob blob-one"></div>
+    <div class="blob blob-two"></div>
+    <div class="blob blob-three"></div>
+
+</div>
+
+
+<div class="exam-page">
+
+    <div class="exam-container">
+
+
+        <!-- =================================================
+             EXAM HEADER
+        ================================================== -->
+
+        <header class="exam-header">
+
+            <div class="exam-header-left">
+
+                <div class="exam-eyebrow">
+                    PROCTIFY / LIVE EXAMINATION
+                </div>
+
+                <div
+                    id="examTitle"
+                    class="exam-title">
+
+                    Loading examination...
+
+                </div>
+
+                <div
+                    id="examSubject"
+                    class="exam-subject">
+
+                </div>
+
+            </div>
+
+
+            <div
+                id="examTimer"
+                class="exam-timer">
+
+                <div class="timer-label">
+                    TIME REMAINING
+                </div>
+
+                <div
+                    id="timerValue"
+                    class="timer-value">
+
+                    --:--
+
+                </div>
+
+            </div>
+
+        </header>
+
+
+        <!-- =================================================
+             WORKSPACE
+        ================================================== -->
+
+        <main
+            id="examWorkspace"
+            class="exam-workspace"
+            style="display:none;">
+
+
+            <!-- =================================================
+                 QUESTION
+            ================================================== -->
+
+            <section class="question-card">
+
+                <div
+                    id="questionNumber"
+                    class="question-number">
+
+                </div>
+
+
+                <div
+                    id="questionText"
+                    class="question-text">
+
+                </div>
+
+
+                <div
+                    id="options"
+                    class="options">
+
+                </div>
+
+
+                <div class="question-actions">
+
+                    <button
+                        id="previousButton"
+                        class="exam-action previous-button"
+                        onclick="previousQuestion()">
+
+                        ← Previous
+
+                    </button>
+
+
+                    <button
+                        id="nextButton"
+                        class="exam-action next-button"
+                        onclick="nextQuestion()">
+
+                        Next →
+
+                    </button>
+
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 QUESTION NAVIGATION
+            ================================================== -->
+
+            <aside class="navigation-card">
+
+                <div class="navigation-title">
+                    QUESTIONS
+                </div>
+
+
+                <div
+                    id="questionButtons"
+                    class="question-buttons">
+
+                </div>
+
+
+                <button
+                    class="submit-button"
+                    onclick="submitExam()">
+
+                    Submit Exam
+
+                </button>
+
+
+                <div
+                    id="examStatus"
+                    class="exam-status">
+
+                    No answers selected
+
+                </div>
+
+            </aside>
+
+        </main>
+
+
+        <!-- =================================================
+             LOADING
+        ================================================== -->
+
+        <div
+            id="loadingState"
+            class="loading-state">
+
+            Loading examination...
+
+        </div>
+
+
+    </div>
+
+</div>
+
+
+<script>
+
+
+/* =========================================================
+   EXAM DATA
+========================================================= */
+
+const examId =
+    "{{ exam_id }}";
+
+
+let exam = null;
+
+let questions = [];
+
+let currentQuestion = 0;
+
+let answers = {};
+
+let remainingSeconds = 0;
+
+let timerInterval = null;
+
+/* =========================================================
+   TAB MONITORING
+========================================================= */
+
+let examStarted = false;
+let tabViolationCount = 0;
+let lastTabViolationTime = 0;
+
+const TAB_VIOLATION_COOLDOWN = 3;
+
+
+/*
+ * Send a tab-switch event to the PROCTIFY backend.
+ */
+
+async function reportTabSwitch() {
+
+    const now = Date.now();
+
+    /*
+     * Prevent duplicate events caused by
+     * browser visibility/focus events firing
+     * close together.
+     */
+
+    if (
+        now - lastTabViolationTime <
+        TAB_VIOLATION_COOLDOWN * 1000
+    ) {
+        return;
+    }
+
+    lastTabViolationTime = now;
+
+    tabViolationCount++;
+
+    console.warn(
+        "PROCTIFY: TAB SWITCH DETECTED"
+    );
+
+
+    try {
+
+        await fetch(
+            "/api/exams/" +
+            encodeURIComponent(
+                examId
+            ) +
+            "/tab-switch",
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
+
+                body: JSON.stringify({
+                    student_id:
+                        "STUDENT_001",
+
+                    event:
+                        "TAB_SWITCH",
+
+                    timestamp:
+                        new Date().toISOString(),
+
+                    count:
+                        tabViolationCount
+                })
+            }
+        );
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Unable to report tab switch:",
+            error
+        );
+    }
+}
+
+
+/*
+ * Detect when the examination tab
+ * becomes hidden.
+ */
+
+document.addEventListener(
+    "visibilitychange",
+    function () {
+
+        if (
+            !examStarted
+        ) {
+            return;
+        }
+
+
+        if (
+            document.visibilityState ===
+            "hidden"
+        ) {
+
+            reportTabSwitch();
+
+        }
+
+    }
+);
+
+
+/*
+ * Also monitor browser window focus.
+ */
+
+window.addEventListener(
+    "blur",
+    function () {
+
+        if (
+            !examStarted
+        ) {
+            return;
+        }
+
+
+        /*
+         * visibilitychange is the primary
+         * signal. blur alone can happen for
+         * other reasons, so only report when
+         * the document is actually hidden.
+         */
+
+        if (
+            document.visibilityState ===
+            "hidden"
+        ) {
+
+            reportTabSwitch();
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   LOAD EXAM
+========================================================= */
+
+async function loadExam() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/exams/" +
+                encodeURIComponent(
+                    examId
+                ),
+                {
+                    cache: "no-store"
+                }
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                "Unable to load examination."
+            );
+
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            !data ||
+            !data.success ||
+            !data.exam
+        ) {
+
+            throw new Error(
+                "Invalid examination data."
+            );
+
+        }
+
+
+        exam =
+            data.exam;
+
+
+        questions =
+            Array.isArray(
+                exam.questions
+            )
+                ? exam.questions
+                : [];
+
+
+        if (
+            questions.length === 0
+        ) {
+
+            throw new Error(
+                "This examination has no questions."
+            );
+
+        }
+
+
+        /*
+         * Don't allow a completed exam
+         * to be started.
+         */
+
+        if (
+            String(
+                exam.status || ""
+            ).toUpperCase() !==
+            "ACTIVE"
+        ) {
+
+            throw new Error(
+                "This examination is no longer active."
+            );
+
+        }
+
+
+        document.getElementById(
+            "examTitle"
+        ).innerText =
+            exam.exam_name ||
+            "Examination";
+
+
+        document.getElementById(
+            "examSubject"
+        ).innerText =
+            exam.subject ||
+            "";
+
+
+        const durationMilliseconds =
+            Number(
+                exam.duration || 0
+            ) * 60 * 1000;
+
+
+        const examStartTime =
+            new Date(
+                exam.created_at
+            ).getTime();
+
+
+        if (
+            Number.isNaN(
+                examStartTime
+            )
+        ) {
+
+            throw new Error(
+                "Invalid exam start time."
+            );
+
+        }
+
+
+        const elapsedMilliseconds =
+            Date.now() -
+            examStartTime;
+
+
+        remainingSeconds =
+            Math.max(
+                0,
+                Math.ceil(
+                    (
+                        durationMilliseconds -
+                        elapsedMilliseconds
+                    ) / 1000
+                )
+            );
+
+
+        buildQuestionButtons();
+
+        showQuestion();
+
+        examStarted = true;
+
+        startTimer();
+
+
+        document.getElementById(
+            "loadingState"
+        ).style.display =
+            "none";
+
+
+        document.getElementById(
+            "examWorkspace"
+        ).style.display =
+            "grid";
+
+    }
+
+
+    catch (error) {
+
+        console.error(
+            "Exam loading error:",
+            error
+        );
+
+
+        document.getElementById(
+            "loadingState"
+        ).className =
+            "error-state";
+
+
+        document.getElementById(
+            "loadingState"
+        ).innerText =
+            error.message ||
+            "Unable to load examination.";
+
+    }
+
+}
+
+
+/* =========================================================
+   QUESTION BUTTONS
+========================================================= */
+
+function buildQuestionButtons() {
+
+    const container =
+        document.getElementById(
+            "questionButtons"
+        );
+
+
+    container.innerHTML = "";
+
+
+    questions.forEach(
+        function (
+            question,
+            index
+        ) {
+
+            const button =
+                document.createElement(
+                    "button"
+                );
+
+
+            button.type =
+                "button";
+
+
+            button.className =
+                "question-button";
+
+
+            button.innerText =
+                index + 1;
+
+
+            button.onclick =
+                function () {
+
+                    currentQuestion =
+                        index;
+
+                    showQuestion();
+
+                };
+
+
+            container.appendChild(
+                button
+            );
+
+        }
+    );
+
+}
+
+
+/* =========================================================
+   SHOW QUESTION
+========================================================= */
+
+function showQuestion() {
+
+    const question =
+        questions[
+            currentQuestion
+        ];
+
+
+    if (!question) {
+        return;
+    }
+
+
+    document.getElementById(
+        "questionNumber"
+    ).innerText =
+        "QUESTION " +
+        (currentQuestion + 1) +
+        " OF " +
+        questions.length;
+
+
+    document.getElementById(
+        "questionText"
+    ).innerText =
+        question.question ||
+        "Question unavailable";
+
+
+    const optionsContainer =
+        document.getElementById(
+            "options"
+        );
+
+
+    optionsContainer.innerHTML =
+        "";
+
+
+    const optionData =
+        question.options || {};
+
+
+    Object.keys(
+        optionData
+    ).forEach(
+        function (letter) {
+
+            const option =
+                document.createElement(
+                    "div"
+                );
+
+
+            option.className =
+                "option";
+
+
+            if (
+                answers[
+                    currentQuestion
+                ] === letter
+            ) {
+
+                option.classList.add(
+                    "selected"
+                );
+
+            }
+
+
+            option.innerHTML = `
+
+                <div class="option-letter">
+                    ${escapeHTML(letter)}
+                </div>
+
+                <div class="option-text">
+                    ${escapeHTML(
+                        optionData[letter]
+                    )}
+                </div>
+
+            `;
+
+
+            option.onclick =
+                function () {
+
+                    selectAnswer(
+                        letter
+                    );
+
+                };
+
+
+            optionsContainer.appendChild(
+                option
+            );
+
+        }
+    );
+
+
+    updateQuestionButtons();
+
+    updateNavigation();
+
+    updateExamStatus();
+
+}
+
+
+/* =========================================================
+   SELECT ANSWER
+========================================================= */
+
+function selectAnswer(letter) {
+
+    answers[
+        currentQuestion
+    ] = letter;
+
+
+    showQuestion();
+
+}
+
+
+/* =========================================================
+   QUESTION NAVIGATION
+========================================================= */
+
+function nextQuestion() {
+
+    if (
+        currentQuestion <
+        questions.length - 1
+    ) {
+
+        currentQuestion++;
+
+        showQuestion();
+
+    }
+
+}
+
+
+function previousQuestion() {
+
+    if (
+        currentQuestion > 0
+    ) {
+
+        currentQuestion--;
+
+        showQuestion();
+
+    }
+
+}
+
+
+/* =========================================================
+   QUESTION BUTTON STATE
+========================================================= */
+
+function updateQuestionButtons() {
+
+    const buttons =
+        document.querySelectorAll(
+            ".question-button"
+        );
+
+
+    buttons.forEach(
+        function (
+            button,
+            index
+        ) {
+
+            button.classList.remove(
+                "current",
+                "answered"
+            );
+
+
+            if (
+                index ===
+                currentQuestion
+            ) {
+
+                button.classList.add(
+                    "current"
+                );
+
+            }
+
+
+            else if (
+                answers[index]
+            ) {
+
+                button.classList.add(
+                    "answered"
+                );
+
+            }
+
+        }
+    );
+
+}
+
+
+/* =========================================================
+   NAVIGATION BUTTONS
+========================================================= */
+
+function updateNavigation() {
+
+    const previous =
+        document.getElementById(
+            "previousButton"
+        );
+
+
+    const next =
+        document.getElementById(
+            "nextButton"
+        );
+
+
+    previous.disabled =
+        currentQuestion === 0;
+
+
+    next.innerText =
+        currentQuestion ===
+        questions.length - 1
+
+            ? "Finish →"
+
+            : "Next →";
+
+}
+
+
+/* =========================================================
+   STATUS
+========================================================= */
+
+function updateExamStatus() {
+
+    const answered =
+        Object.keys(
+            answers
+        ).length;
+
+
+    document.getElementById(
+        "examStatus"
+    ).innerText =
+        answered +
+        " of " +
+        questions.length +
+        " answered";
+
+}
+
+
+/* =========================================================
+   TIMER
+========================================================= */
+
+function startTimer() {
+
+    updateTimerDisplay();
+
+
+    timerInterval =
+        setInterval(
+            function () {
+
+                remainingSeconds--;
+
+
+                updateTimerDisplay();
+
+
+                if (
+                    remainingSeconds <= 0
+                ) {
+
+                    clearInterval(
+                        timerInterval
+                    );
+
+
+                    alert(
+                        "Time is up. Your examination will be submitted."
+                    );
+
+
+                    submitExam();
+
+                }
+
+            },
+            1000
+        );
+
+}
+
+
+function updateTimerDisplay() {
+
+    const minutes =
+        Math.floor(
+            remainingSeconds / 60
+        );
+
+
+    const seconds =
+        remainingSeconds % 60;
+
+
+    document.getElementById(
+        "timerValue"
+    ).innerText =
+
+        String(minutes)
+            .padStart(2, "0")
+
+        + ":" +
+
+        String(seconds)
+            .padStart(2, "0");
+
+
+    if (
+        remainingSeconds <= 60
+    ) {
+
+        document.getElementById(
+            "examTimer"
+        ).classList.add(
+            "timer-warning"
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   SUBMIT
+========================================================= */
+
+async function submitExam() {
+
+    const answered =
+        Object.keys(
+            answers
+        ).length;
+
+
+    const confirmed =
+        window.confirm(
+
+            "You have answered " +
+            answered +
+            " of " +
+            questions.length +
+            " questions.\n\n" +
+            "Submit this examination?"
+
+        );
+
+
+    if (!confirmed) {
+        return;
+    }
+
+
+    clearInterval(
+        timerInterval
+    );
+
+
+    /*
+     * Submission API will be connected
+     * in the next step.
+     */
+
+    alert(
+        "Exam submission will be connected next."
+    );
+
+}
+
+
+/* =========================================================
+   HTML ESCAPING
+========================================================= */
+
+function escapeHTML(value) {
+
+    return String(value)
+
+        .replace(
+            /&/g,
+            "&amp;"
+        )
+
+        .replace(
+            /</g,
+            "&lt;"
+        )
+
+        .replace(
+            />/g,
+            "&gt;"
+        )
+
+        .replace(
+            /"/g,
+            "&quot;"
+        )
+
+        .replace(
+            /'/g,
+            "&#039;"
+        );
+
+}
+
+
+/* =========================================================
+   START
+========================================================= */
+
+loadExam();
+
+</script>
+
+
+</body>
+
+</html>

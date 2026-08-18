@@ -1,0 +1,1224 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>PROCTIFY • System Check</title>
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+
+            font-family:
+                Inter,
+                Arial,
+                sans-serif;
+
+            background:
+                radial-gradient(
+                    circle at top left,
+                    #eef2ff,
+                    transparent 40%
+                ),
+                radial-gradient(
+                    circle at bottom right,
+                    #ecfeff,
+                    transparent 40%
+                ),
+                #f8fafc;
+
+            color: #172033;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            padding: 30px;
+        }
+
+        .check-container {
+
+            width: min(760px, 100%);
+
+            background:
+                rgba(255,255,255,0.97);
+
+            border:
+                1px solid #e5e7eb;
+
+            border-radius: 24px;
+
+            padding: 34px;
+
+            box-shadow:
+                0 20px 60px
+                rgba(15,23,42,0.10);
+        }
+
+        .eyebrow {
+
+            font-size: 12px;
+
+            font-weight: 800;
+
+            letter-spacing: 2px;
+
+            color: #6366f1;
+
+            margin-bottom: 8px;
+        }
+
+        h1 {
+
+            margin: 0;
+
+            font-size: 30px;
+        }
+
+        .subtitle {
+
+            color: #64748b;
+
+            margin:
+                10px 0 28px;
+
+            line-height: 1.5;
+        }
+
+        .exam-info {
+
+            margin-bottom: 24px;
+
+            padding: 14px 16px;
+
+            border-radius: 14px;
+
+            background: #f8fafc;
+
+            border:
+                1px solid #e5e7eb;
+        }
+
+        .exam-name {
+
+            font-weight: 800;
+        }
+
+        .exam-id {
+
+            font-size: 12px;
+
+            color: #64748b;
+
+            margin-top: 4px;
+        }
+
+        .check-list {
+
+            display: grid;
+
+            gap: 12px;
+        }
+
+        .check-item {
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: space-between;
+
+            padding: 17px 18px;
+
+            border:
+                1px solid #e5e7eb;
+
+            border-radius: 15px;
+
+            background: #ffffff;
+        }
+
+        .check-left {
+
+            display: flex;
+
+            align-items: center;
+
+            gap: 14px;
+        }
+
+        .icon {
+
+            width: 38px;
+
+            height: 38px;
+
+            border-radius: 11px;
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: center;
+
+            background: #f1f5f9;
+
+            font-size: 18px;
+        }
+
+        .check-name {
+
+            font-weight: 750;
+        }
+
+        .check-description {
+
+            font-size: 12px;
+
+            color: #64748b;
+
+            margin-top: 3px;
+        }
+
+        .status {
+
+            font-size: 12px;
+
+            font-weight: 800;
+
+            padding: 7px 11px;
+
+            border-radius: 999px;
+
+            white-space: nowrap;
+        }
+
+        .checking {
+
+            background: #fef3c7;
+
+            color: #92400e;
+        }
+
+        .passed {
+
+            background: #dcfce7;
+
+            color: #166534;
+        }
+
+        .failed {
+
+            background: #fee2e2;
+
+            color: #991b1b;
+        }
+
+        .button-area {
+
+            margin-top: 28px;
+        }
+
+        #continueButton {
+
+            width: 100%;
+
+            border: none;
+
+            border-radius: 14px;
+
+            padding: 15px 18px;
+
+            font-size: 15px;
+
+            font-weight: 800;
+
+            cursor: pointer;
+
+            background: #111827;
+
+            color: white;
+        }
+
+        #continueButton:disabled {
+
+            opacity: 0.45;
+
+            cursor: not-allowed;
+        }
+
+        .message {
+
+            margin-top: 14px;
+
+            min-height: 20px;
+
+            text-align: center;
+
+            font-size: 13px;
+
+            color: #64748b;
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+
+<div class="check-container">
+
+
+    <div class="eyebrow">
+
+        PROCTIFY • PRE-EXAM CHECK
+
+    </div>
+
+
+    <h1>
+
+        System Readiness Check
+
+    </h1>
+
+
+    <p class="subtitle">
+
+        PROCTIFY is checking the systems required
+        for secure examination monitoring.
+
+    </p>
+
+
+    <div class="exam-info">
+
+        <div
+            class="exam-name"
+            id="examName"
+        >
+
+            Checking examination...
+
+        </div>
+
+
+        <div class="exam-id">
+
+            Examination ID:
+
+            <span id="examIdText">
+
+                {{ exam_id }}
+
+            </span>
+
+        </div>
+
+    </div>
+
+
+    <div class="check-list">
+
+
+        <!-- CAMERA -->
+
+        <div class="check-item">
+
+            <div class="check-left">
+
+                <div class="icon">
+
+                    📷
+
+                </div>
+
+
+                <div>
+
+                    <div class="check-name">
+
+                        Camera
+
+                    </div>
+
+                    <div class="check-description">
+
+                        Existing PROCTIFY monitoring
+                        camera must be active.
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <span
+                id="cameraStatus"
+                class="status checking"
+            >
+
+                Checking...
+
+            </span>
+
+        </div>
+
+
+        <!-- MICROPHONE -->
+
+        <div class="check-item">
+
+            <div class="check-left">
+
+                <div class="icon">
+
+                    🎙️
+
+                </div>
+
+
+                <div>
+
+                    <div class="check-name">
+
+                        Microphone
+
+                    </div>
+
+                    <div class="check-description">
+
+                        Existing audio monitoring
+                        must be active.
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <span
+                id="microphoneStatus"
+                class="status checking"
+            >
+
+                Checking...
+
+            </span>
+
+        </div>
+
+
+        <!-- TAB -->
+
+        <div class="check-item">
+
+            <div class="check-left">
+
+                <div class="icon">
+
+                    🖥️
+
+                </div>
+
+
+                <div>
+
+                    <div class="check-name">
+
+                        Tab Monitoring
+
+                    </div>
+
+                    <div class="check-description">
+
+                        PROCTIFY will detect when
+                        the examination tab loses focus.
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <span
+                id="tabStatus"
+                class="status checking"
+            >
+
+                Checking...
+
+            </span>
+
+        </div>
+
+
+        <!-- AI -->
+
+        <div class="check-item">
+
+            <div class="check-left">
+
+                <div class="icon">
+
+                    🤖
+
+                </div>
+
+
+                <div>
+
+                    <div class="check-name">
+
+                        AI Monitoring
+
+                    </div>
+
+                    <div class="check-description">
+
+                        Existing PROCTIFY AI
+                        monitoring engine must be online.
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <span
+                id="aiStatus"
+                class="status checking"
+            >
+
+                Checking...
+
+            </span>
+
+        </div>
+
+
+        <!-- EXAM -->
+
+        <div class="check-item">
+
+            <div class="check-left">
+
+                <div class="icon">
+
+                    📝
+
+                </div>
+
+
+                <div>
+
+                    <div class="check-name">
+
+                        Examination Status
+
+                    </div>
+
+                    <div class="check-description">
+
+                        The examination must currently
+                        be ACTIVE.
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <span
+                id="examStatus"
+                class="status checking"
+            >
+
+                Checking...
+
+            </span>
+
+        </div>
+
+
+    </div>
+
+
+    <div class="button-area">
+
+
+        <button
+            id="continueButton"
+            disabled
+            onclick="continueToExam()"
+        >
+
+            Complete all checks to continue
+
+        </button>
+
+
+        <div
+            id="message"
+            class="message"
+        >
+
+            Initializing PROCTIFY checks...
+
+        </div>
+
+
+    </div>
+
+
+</div>
+
+
+
+<script>
+
+
+const EXAM_ID =
+    "{{ exam_id }}";
+
+
+/*
+ * Temporary current student ID.
+ *
+ * We will replace this with the
+ * verified login/session student ID
+ * in the identity phase.
+ */
+
+const STUDENT_ID =
+    "STUDENT_001";
+
+
+let cameraReady = false;
+
+let microphoneReady = false;
+
+let tabReady = false;
+
+let aiReady = false;
+
+let examReady = false;
+
+
+
+/* =========================================================
+   STATUS HELPER
+========================================================= */
+
+function setStatus(
+    elementId,
+    state,
+    text
+) {
+
+    const element =
+        document.getElementById(
+            elementId
+        );
+
+    if (!element) {
+        return;
+    }
+
+    element.className =
+        "status " + state;
+
+    element.innerText =
+        text;
+}
+
+
+
+/* =========================================================
+   CHECK EXISTING MONITORING SESSION
+========================================================= */
+
+async function getStudentMonitoringData() {
+
+    const response =
+        await fetch(
+            "/api/student/" +
+            encodeURIComponent(
+                STUDENT_ID
+            ),
+            {
+                cache: "no-store"
+            }
+        );
+
+
+    if (!response.ok) {
+
+        throw new Error(
+            "Monitoring data unavailable."
+        );
+    }
+
+
+    const data =
+        await response.json();
+
+
+    if (
+        !data ||
+        !data.success ||
+        !data.student
+    ) {
+
+        throw new Error(
+            "Invalid monitoring response."
+        );
+    }
+
+
+    return data.student;
+}
+
+
+
+/* =========================================================
+   CAMERA CHECK
+========================================================= */
+
+async function checkCamera() {
+
+    try {
+
+        /*
+         * IMPORTANT:
+         *
+         * We DO NOT call getUserMedia().
+         *
+         * The existing live_monitor.py process
+         * already owns the webcam.
+         */
+
+        const student =
+            await getStudentMonitoringData();
+
+
+        if (
+            student.camera_available === true
+        ) {
+
+            cameraReady = true;
+
+            setStatus(
+                "cameraStatus",
+                "passed",
+                "✓ Active"
+            );
+
+            return true;
+        }
+
+
+        cameraReady = false;
+
+        setStatus(
+            "cameraStatus",
+            "failed",
+            "✕ Not Active"
+        );
+
+        return false;
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Camera check:",
+            error
+        );
+
+        cameraReady = false;
+
+        setStatus(
+            "cameraStatus",
+            "failed",
+            "✕ Unavailable"
+        );
+
+        return false;
+    }
+}
+
+
+
+/* =========================================================
+   MICROPHONE CHECK
+========================================================= */
+
+async function checkMicrophone() {
+
+    try {
+
+        const student =
+            await getStudentMonitoringData();
+
+
+        if (
+            student.audio_available === true
+        ) {
+
+            microphoneReady = true;
+
+            setStatus(
+                "microphoneStatus",
+                "passed",
+                "✓ Active"
+            );
+
+            return true;
+        }
+
+
+        microphoneReady = false;
+
+        setStatus(
+            "microphoneStatus",
+            "failed",
+            "✕ Not Active"
+        );
+
+        return false;
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Microphone check:",
+            error
+        );
+
+        microphoneReady = false;
+
+        setStatus(
+            "microphoneStatus",
+            "failed",
+            "✕ Unavailable"
+        );
+
+        return false;
+    }
+}
+
+
+
+/* =========================================================
+   TAB MONITORING CHECK
+========================================================= */
+
+function checkTabMonitoring() {
+
+    /*
+     * The browser visibility API is required
+     * for detecting tab changes.
+     */
+
+    if (
+        typeof document.visibilityState !==
+        "undefined"
+    ) {
+
+        tabReady = true;
+
+        setStatus(
+            "tabStatus",
+            "passed",
+            "✓ Ready"
+        );
+
+        return true;
+    }
+
+
+    tabReady = false;
+
+    setStatus(
+        "tabStatus",
+        "failed",
+        "✕ Unsupported"
+    );
+
+    return false;
+}
+
+
+
+/* =========================================================
+   AI MONITORING CHECK
+========================================================= */
+
+async function checkAIMonitoring() {
+
+    try {
+
+        const student =
+            await getStudentMonitoringData();
+
+
+        /*
+         * AI_AVAILABLE is published by
+         * the existing monitoring process.
+         */
+
+        if (
+            student.ai_available === true &&
+            String(
+                student.status || ""
+            ).toUpperCase() === "ONLINE"
+        ) {
+
+            aiReady = true;
+
+            setStatus(
+                "aiStatus",
+                "passed",
+                "✓ Online"
+            );
+
+            return true;
+        }
+
+
+        aiReady = false;
+
+        setStatus(
+            "aiStatus",
+            "failed",
+            "✕ Offline"
+        );
+
+        return false;
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "AI monitoring check:",
+            error
+        );
+
+        aiReady = false;
+
+        setStatus(
+            "aiStatus",
+            "failed",
+            "✕ Offline"
+        );
+
+        return false;
+    }
+}
+
+
+
+/* =========================================================
+   EXAM STATUS CHECK
+========================================================= */
+
+async function checkExam() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/exams/" +
+                encodeURIComponent(
+                    EXAM_ID
+                ),
+                {
+                    cache: "no-store"
+                }
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                "Unable to read examination."
+            );
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            !data ||
+            !data.success ||
+            !data.exam
+        ) {
+
+            throw new Error(
+                "Invalid examination data."
+            );
+        }
+
+
+        const exam =
+            data.exam;
+
+
+        document.getElementById(
+            "examName"
+        ).innerText =
+            exam.exam_name ||
+            "Examination";
+
+
+        const status =
+            String(
+                exam.status || ""
+            ).toUpperCase();
+
+
+        if (
+            status === "ACTIVE"
+        ) {
+
+            examReady = true;
+
+            setStatus(
+                "examStatus",
+                "passed",
+                "✓ ACTIVE"
+            );
+
+            return true;
+        }
+
+
+        examReady = false;
+
+        setStatus(
+            "examStatus",
+            "failed",
+            status || "✕ Not Active"
+        );
+
+        return false;
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Exam check:",
+            error
+        );
+
+        examReady = false;
+
+        setStatus(
+            "examStatus",
+            "failed",
+            "✕ Error"
+        );
+
+        return false;
+    }
+}
+
+
+
+/* =========================================================
+   UPDATE CONTINUE BUTTON
+========================================================= */
+
+function updateContinueButton() {
+
+    const ready =
+        cameraReady &&
+        microphoneReady &&
+        tabReady &&
+        aiReady &&
+        examReady;
+
+
+    const button =
+        document.getElementById(
+            "continueButton"
+        );
+
+
+    const message =
+        document.getElementById(
+            "message"
+        );
+
+
+    if (ready) {
+
+        button.disabled =
+            false;
+
+        button.innerText =
+            "Continue to Examination →";
+
+        message.innerText =
+            "All required PROCTIFY systems are ready.";
+
+        return;
+    }
+
+
+    button.disabled =
+        true;
+
+    button.innerText =
+        "Complete all checks to continue";
+
+    message.innerText =
+        "The examination cannot start until all required checks pass.";
+}
+
+
+
+/* =========================================================
+   RUN ALL CHECKS
+========================================================= */
+
+async function runChecks() {
+
+    /*
+     * Read the existing monitoring state.
+     *
+     * We do NOT open a second camera.
+     */
+
+    await checkCamera();
+
+    await checkMicrophone();
+
+    checkTabMonitoring();
+
+    await checkAIMonitoring();
+
+    await checkExam();
+
+    updateContinueButton();
+}
+
+
+
+/* =========================================================
+   TAB MONITORING DURING PRE-CHECK
+========================================================= */
+
+document.addEventListener(
+    "visibilitychange",
+    function () {
+
+        /*
+         * We don't record a violation here.
+         *
+         * This only verifies that the browser
+         * monitoring mechanism is working.
+         */
+
+        if (
+            document.visibilityState ===
+            "visible"
+        ) {
+
+            tabReady = true;
+
+            setStatus(
+                "tabStatus",
+                "passed",
+                "✓ Ready"
+            );
+
+        }
+
+        else {
+
+            tabReady = false;
+
+            setStatus(
+                "tabStatus",
+                "failed",
+                "✕ Tab switched"
+            );
+        }
+
+
+        updateContinueButton();
+    }
+);
+
+
+
+/* =========================================================
+   CONTINUE TO EXAM
+========================================================= */
+
+function continueToExam() {
+
+    if (
+        !(
+            cameraReady &&
+            microphoneReady &&
+            tabReady &&
+            aiReady &&
+            examReady
+        )
+    ) {
+
+        return;
+    }
+
+
+    window.location.href =
+        "/student/exam/" +
+        encodeURIComponent(
+            EXAM_ID
+        );
+}
+
+
+
+/* =========================================================
+   INITIALIZE
+========================================================= */
+
+runChecks();
+
+
+</script>
+
+
+</body>
+
+</html>

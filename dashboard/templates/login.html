@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>PROCTIFY — Login</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+    <style>
+
+        .login-page {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 30px;
+        }
+
+        .login-container {
+            width: 100%;
+            max-width: 460px;
+        }
+
+        .login-brand {
+            text-align: center;
+            margin-bottom: 28px;
+        }
+
+        .login-logo {
+            width: 62px;
+            height: 62px;
+            margin: 0 auto 18px;
+            border-radius: 20px;
+            background: #292927;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 25px;
+            font-weight: 700;
+            box-shadow:
+                0 15px 30px rgba(40,40,40,.16);
+        }
+
+        .login-brand h1 {
+            font-size: 28px;
+            color: #292927;
+        }
+
+        .login-brand p {
+            margin-top: 7px;
+            font-size: 11px;
+            color: #898981;
+        }
+
+        .login-card {
+            background: rgba(255,255,255,.88);
+            border: 1px solid #e5e5df;
+            border-radius: 28px;
+            padding: 30px;
+            box-shadow:
+                0 20px 50px rgba(55,55,45,.08);
+            backdrop-filter: blur(16px);
+        }
+
+        .login-title {
+            font-size: 17px;
+            font-weight: 700;
+            color: #292927;
+            margin-bottom: 6px;
+        }
+
+        .login-subtitle {
+            font-size: 10px;
+            color: #8b8b83;
+            margin-bottom: 23px;
+        }
+
+        .role-label {
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 1.2px;
+            color: #77776f;
+            margin-bottom: 10px;
+        }
+
+        .role-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .role-option {
+            position: relative;
+        }
+
+        .role-option input {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .role-button {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 105px;
+            border: 1px solid #deded8;
+            border-radius: 17px;
+            background: #fafaf7;
+            cursor: pointer;
+            transition: .2s ease;
+        }
+
+        .role-icon {
+            font-size: 24px;
+        }
+
+        .role-name {
+            font-size: 11px;
+            font-weight: 700;
+            color: #494944;
+        }
+
+        .role-description {
+            font-size: 8px;
+            color: #999990;
+        }
+
+        .role-option input:checked +
+        .role-button {
+            border-color: #8776a8;
+            background: #f1edf6;
+            box-shadow:
+                0 0 0 3px rgba(135,118,168,.10);
+        }
+
+        .login-fields {
+            margin-top: 22px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+            margin-bottom: 14px;
+        }
+
+        .form-group label {
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: #77776f;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 13px 14px;
+            border: 1px solid #deded8;
+            border-radius: 12px;
+            background: #fafaf7;
+            font-family: inherit;
+            font-size: 12px;
+            outline: none;
+        }
+
+        .form-group input:focus {
+            border-color: #8776a8;
+            box-shadow:
+                0 0 0 3px rgba(135,118,168,.10);
+        }
+
+        .login-button {
+            width: 100%;
+            margin-top: 8px;
+            border: none;
+            border-radius: 13px;
+            padding: 14px;
+            background: #292927;
+            color: white;
+            font-family: inherit;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: .2s ease;
+        }
+
+        .login-button:hover {
+            transform: translateY(-2px);
+            box-shadow:
+                0 10px 22px rgba(0,0,0,.14);
+        }
+
+        .login-message {
+            display: none;
+            margin-top: 14px;
+            padding: 11px;
+            border-radius: 11px;
+            background: #f5e4e4;
+            color: #7a4545;
+            font-size: 10px;
+            text-align: center;
+        }
+
+        .login-footer {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 8px;
+            letter-spacing: 1px;
+            color: #a0a098;
+        }
+
+        @media(max-width: 500px) {
+
+            .login-page {
+                padding: 15px;
+            }
+
+            .login-card {
+                padding: 22px;
+            }
+
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+<div class="background-art">
+
+    <div class="blob blob-one"></div>
+    <div class="blob blob-two"></div>
+    <div class="blob blob-three"></div>
+
+</div>
+
+
+<div class="login-page">
+
+    <div class="login-container">
+
+
+        <!-- =================================================
+             BRAND
+        ================================================== -->
+
+        <div class="login-brand">
+
+            <div class="login-logo">
+                P
+            </div>
+
+            <h1>
+                PROCTIFY
+            </h1>
+
+            <p>
+                AI-ASSISTED EXAM INTEGRITY
+            </p>
+
+        </div>
+
+
+        <!-- =================================================
+             LOGIN CARD
+        ================================================== -->
+
+        <div class="login-card">
+
+            <div class="login-title">
+                Welcome back
+            </div>
+
+            <div class="login-subtitle">
+                Select your role to continue.
+            </div>
+
+
+            <!-- =================================================
+                 ROLE
+            ================================================== -->
+
+            <div class="role-label">
+                LOGIN AS
+            </div>
+
+
+            <div class="role-grid">
+
+
+                <div class="role-option">
+
+                    <input
+                        type="radio"
+                        id="teacherRole"
+                        name="role"
+                        value="teacher"
+                        checked
+                    >
+
+                    <label
+                        for="teacherRole"
+                        class="role-button">
+
+                        <span class="role-icon">
+                            👨‍🏫
+                        </span>
+
+                        <span class="role-name">
+                            Teacher
+                        </span>
+
+                        <span class="role-description">
+                            Examination control
+                        </span>
+
+                    </label>
+
+                </div>
+
+
+                <div class="role-option">
+
+                    <input
+                        type="radio"
+                        id="studentRole"
+                        name="role"
+                        value="student"
+                    >
+
+                    <label
+                        for="studentRole"
+                        class="role-button">
+
+                        <span class="role-icon">
+                            👨‍🎓
+                        </span>
+
+                        <span class="role-name">
+                            Student
+                        </span>
+
+                        <span class="role-description">
+                            Take examination
+                        </span>
+
+                    </label>
+
+                </div>
+
+            </div>
+
+
+            <!-- =================================================
+                 LOGIN FIELDS
+            ================================================== -->
+
+            <div class="login-fields">
+
+                <div class="form-group">
+
+                    <label for="userId">
+                        USER ID
+                    </label>
+
+                    <input
+                        type="text"
+                        id="userId"
+                        placeholder="Enter your ID"
+                        autocomplete="off"
+                    >
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label for="password">
+                        PASSWORD
+                    </label>
+
+                    <input
+                        type="password"
+                        id="password"
+                        placeholder="Enter your password"
+                    >
+
+                </div>
+
+
+                <button
+                    type="button"
+                    class="login-button"
+                    onclick="login()">
+
+                    Continue →
+
+                </button>
+
+
+                <div
+                    id="loginMessage"
+                    class="login-message">
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div class="login-footer">
+
+            PROCTIFY • SECURE EXAMINATION ENVIRONMENT
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+function login() {
+
+    const role =
+        document.querySelector(
+            'input[name="role"]:checked'
+        ).value;
+
+
+    const userId =
+        document.getElementById(
+            "userId"
+        ).value.trim();
+
+
+    const password =
+        document.getElementById(
+            "password"
+        ).value;
+
+
+    const message =
+        document.getElementById(
+            "loginMessage"
+        );
+
+
+    /*
+     * Temporary validation.
+     *
+     * We will connect this to the actual
+     * authentication system next.
+     */
+
+    if (!userId || !password) {
+
+        message.innerText =
+            "Please enter your User ID and password.";
+
+        message.style.display =
+            "block";
+
+        return;
+
+    }
+
+
+    message.style.display =
+        "none";
+
+
+    if (role === "teacher") {
+
+        window.location.href =
+            "/teacher";
+
+        return;
+
+    }
+
+
+    if (role === "student") {
+
+        /*
+         * Student does NOT go directly
+         * to the dashboard.
+         *
+         * First:
+         *
+         * Login
+         *   ↓
+         * Face Verification
+         *   ↓
+         * Student Dashboard
+         */
+
+        window.location.href =
+            "/student/verify";
+
+        return;
+
+    }
+
+}
+
+</script>
+
+
+</body>
+
+</html>

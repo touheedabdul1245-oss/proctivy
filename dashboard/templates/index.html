@@ -1,0 +1,3459 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>PROCTIFY — Teacher Dashboard</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
+
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+</head>
+
+
+<body>
+
+
+<!-- =========================================================
+     PROCTIFY AI FLOW
+========================================================= -->
+
+<div class="ai-flow">
+
+    <div class="pulse-ring ring-one"></div>
+    <div class="pulse-ring ring-two"></div>
+    <div class="pulse-ring ring-three"></div>
+
+    <div class="ai-core">
+        <span></span>
+    </div>
+
+    <div class="orbit orbit-one">
+        <i></i>
+    </div>
+
+    <div class="orbit orbit-two">
+        <i></i>
+    </div>
+
+    <div class="orbit orbit-three">
+        <i></i>
+    </div>
+
+    <div class="floating-dot dot-one"></div>
+    <div class="floating-dot dot-two"></div>
+    <div class="floating-dot dot-three"></div>
+    <div class="floating-dot dot-four"></div>
+
+</div>
+
+
+<!-- =========================================================
+     PROCTIFY ATMOSPHERIC BACKGROUND
+========================================================= -->
+
+<div class="ambient-background">
+
+    <div class="ambient-orb orb-one"></div>
+    <div class="ambient-orb orb-two"></div>
+    <div class="ambient-orb orb-three"></div>
+
+    <div class="flow-line flow-one"></div>
+    <div class="flow-line flow-two"></div>
+    <div class="flow-line flow-three"></div>
+
+    <div class="floating-dot dot-1"></div>
+    <div class="floating-dot dot-2"></div>
+    <div class="floating-dot dot-3"></div>
+    <div class="floating-dot dot-4"></div>
+    <div class="floating-dot dot-5"></div>
+    <div class="floating-dot dot-6"></div>
+
+</div>
+
+
+<div class="ambient-lines"></div>
+
+
+<!-- =========================================================
+     ARTISTIC BACKGROUND
+========================================================= -->
+
+<div class="background-art">
+
+    <div class="blob blob-one"></div>
+    <div class="blob blob-two"></div>
+    <div class="blob blob-three"></div>
+
+    <svg class="scribble scribble-one"
+         viewBox="0 0 500 300">
+
+        <path d="
+            M20 180
+            C70 40 130 280 190 130
+            S310 40 360 160
+            S430 270 490 100
+        "/>
+
+    </svg>
+
+
+    <svg class="scribble scribble-two"
+         viewBox="0 0 500 300">
+
+        <path d="
+            M10 130
+            C90 250 130 20 220 150
+            S350 270 480 80
+        "/>
+
+    </svg>
+
+
+    <div class="floating-dot dot-one"></div>
+    <div class="floating-dot dot-two"></div>
+    <div class="floating-dot dot-three"></div>
+
+</div>
+
+
+<!-- =========================================================
+     SIDEBAR
+========================================================= -->
+
+<aside class="sidebar">
+
+    <div class="sidebar-logo">
+        P
+    </div>
+
+
+    <nav class="sidebar-nav">
+        <button class="sidebar-item active"
+                title="Dashboard"
+                onclick="window.location.href='/'">
+
+            <i data-lucide="layout-grid"></i>
+
+        </button>
+
+
+        <button class="sidebar-item"
+                title="Live Monitoring">
+
+            <i data-lucide="scan-face"></i>
+
+        </button>
+
+
+        <button class="sidebar-item"
+                title="Exams"
+                onclick="window.location.href='/exams'">
+
+            <i data-lucide="file-text"></i>
+
+        </button>
+
+
+        <button class="sidebar-item"
+                title="Students">
+
+            <i data-lucide="users"></i>
+
+        </button>
+
+
+        <button class="sidebar-item"
+                title="Reports">
+
+            <i data-lucide="bar-chart-3"></i>
+
+        </button>
+
+    </nav>
+
+
+    <div class="sidebar-bottom">
+
+        <button class="sidebar-item"
+                title="Settings">
+
+            <i data-lucide="settings"></i>
+
+        </button>
+
+    </div>
+
+</aside>
+
+
+<!-- =========================================================
+     MAIN
+========================================================= -->
+
+<main class="main-content">
+
+
+<!-- =========================================================
+     HEADER
+========================================================= -->
+
+<header class="topbar">
+
+    <div>
+
+        <div class="eyebrow">
+            PROCTIFY / TEACHER CONSOLE
+        </div>
+
+        <h1>
+            Good morning, Professor.
+        </h1>
+
+        <p class="subtitle">
+            Your examination environment is being monitored intelligently.
+        </p>
+
+    </div>
+
+
+    <div class="top-right">
+
+        <div class="live-pill">
+            <span class="live-dot"></span>
+            LIVE EXAM
+        </div>
+
+
+        <div class="teacher-avatar">
+            T
+        </div>
+
+
+        <!-- LIVE MONITORING CONTROLS -->
+
+        <div class="monitor-status">
+
+
+            <div class="live-pulse-card">
+
+                <div class="pulse-heading">
+
+                    <span class="pulse-dot"></span>
+
+                    LIVE PULSE
+
+                </div>
+
+
+                <div class="pulse-wave"
+                     aria-label="Live monitoring activity">
+
+                    <i></i><i></i><i></i><i></i>
+                    <i></i><i></i><i></i><i></i>
+                    <i></i><i></i><i></i><i></i>
+                    <i></i><i></i><i></i>
+
+                </div>
+
+
+                <div class="pulse-value">
+
+                    <strong id="pulseCount">
+                        0
+                    </strong>
+
+                    <small>
+                        ACTIVE
+                    </small>
+
+                </div>
+
+            </div>
+
+
+            <div class="monitor-health">
+
+                <div class="health-top">
+
+                    <span>
+                        MONITORING HEALTH
+                    </span>
+
+                    <strong id="healthOverall">
+                        OPTIMAL
+                    </strong>
+
+                </div>
+
+
+                <div class="health-items">
+
+                    <div>
+                        <span class="health-dot"
+                            id="cameraHealthDot"></span>
+                        CAM
+                    </div>
+
+                    <div>
+                        <span class="health-dot"
+                            id="audioHealthDot"></span>
+                        AUD
+                    </div>
+
+                    <div>
+                        <span class="health-dot"
+                            id="aiHealthDot"></span>
+                        AI
+                    </div>
+
+                    <div>
+                        <span class="health-dot"
+                            id="tabHealthDot"></span>
+                        TAB
+                    </div>
+
+                </div>
+            </div>
+
+
+            <button
+                class="message-orb"
+                id="messageButton"
+                title="Student messages"
+                onclick="openMessages()">
+
+                <span class="message-icon">
+                    ✉
+                </span>
+
+                <span
+                    class="message-badge"
+                    id="messageCount">
+
+                    03
+
+                </span>
+
+            </button>
+
+        </div>
+
+    </div>
+
+</header>
+
+
+<!-- =========================================================
+     TOP STATS
+========================================================= -->
+
+<section class="overview">
+
+
+    <div class="stat-card mint">
+
+        <div class="card-label">
+            STUDENTS
+        </div>
+
+        <div class="stat-number"
+             id="totalStudents">
+
+            0
+
+        </div>
+
+        <div class="stat-bottom">
+
+            <span>
+                Currently enrolled
+            </span>
+
+            <span class="mini-arrow">
+                ↗
+            </span>
+
+        </div>
+
+    </div>
+
+
+    <div class="stat-card lavender stat-offset">
+
+        <div class="card-label">
+            ACTIVE
+        </div>
+
+        <div class="stat-number"
+             id="activeStudents">
+
+            0
+
+        </div>
+
+        <div class="stat-bottom">
+
+            <span>
+                Writing exam now
+            </span>
+
+            <span class="mini-arrow">
+                ↗
+            </span>
+
+        </div>
+
+    </div>
+
+
+    <div class="stat-card submissions-card stat-small-offset"
+         onclick="openSubmissions()">
+
+        <div class="card-label">
+            SUBMISSIONS
+        </div>
+
+        <div class="stat-number"
+             id="submittedStudents">
+
+            0
+
+        </div>
+
+        <div class="submission-caption">
+            Students submitted
+        </div>
+
+        <div class="submission-meta">
+
+            <span>
+
+                <b id="evaluatedStudents">
+                    0
+                </b>
+
+                evaluated
+
+            </span>
+
+
+            <span>
+
+                <b id="pendingSubmissions">
+                    0
+                </b>
+
+                pending
+
+            </span>
+
+        </div>
+
+
+        <div class="stat-bottom submission-bottom">
+
+            <span>
+                Review answers &amp; results
+            </span>
+
+            <span class="mini-arrow">
+                ↗
+            </span>
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- =========================================================
+     MAIN WORKSPACE
+========================================================= -->
+
+<section class="workspace">
+
+
+    <!-- =====================================================
+         STUDENT OVERVIEW
+    ====================================================== -->
+
+    <div class="students-section">
+
+
+        <div class="section-heading">
+
+            <div>
+
+                <div class="eyebrow">
+                    LIVE CLASSROOM
+                </div>
+
+                <h2>
+                    Student activity
+                </h2>
+
+            </div>
+
+
+            <button class="view-button">
+                View all
+                <span>↗</span>
+            </button>
+
+        </div>
+
+
+        <div class="student-grid">
+
+
+            <!-- =================================================
+                 STUDENT CARD 01
+            ================================================== -->
+
+            <article class="student-card normal">
+
+                <div class="student-top">
+
+                    <div class="student-avatar avatar-green">
+                        A
+                    </div>
+
+                    <span class="status-tag safe">
+                        ● STABLE
+                    </span>
+
+                </div>
+
+
+                <div class="student-name">
+                    Student 01
+                </div>
+
+
+                <div class="student-id">
+                    ID / STU-001
+                </div>
+
+
+                <div class="student-score">
+
+                    <div>
+
+                        <span>
+                            Trust
+                        </span>
+
+                        <strong>
+                            100
+                        </strong>
+
+                    </div>
+
+
+                    <div class="score-bar">
+
+                        <span style="width:100%"></span>
+
+                    </div>
+
+                </div>
+
+
+                <div class="student-footer">
+
+                    <span>
+                        Waiting for live data
+                    </span>
+
+                    <button
+                        type="button"
+                        onclick="openStudentFromCard(this)">
+
+                        →
+
+                    </button>
+
+                </div>
+
+            </article>
+
+
+            <!-- =================================================
+                 STUDENT CARD 02
+            ================================================== -->
+
+            <article class="student-card warning-card">
+
+                <div class="student-top">
+
+                    <div class="student-avatar avatar-yellow">
+                        R
+                    </div>
+
+                    <span class="status-tag warning">
+                        ● REVIEW
+                    </span>
+
+                </div>
+
+
+                <div class="student-name">
+                    Student 02
+                </div>
+
+
+                <div class="student-id">
+                    ID / STU-002
+                </div>
+
+
+                <div class="student-score">
+
+                    <div>
+
+                        <span>
+                            Trust
+                        </span>
+
+                        <strong>
+                            72
+                        </strong>
+
+                    </div>
+
+
+                    <div class="score-bar">
+
+                        <span style="width:72%"></span>
+
+                    </div>
+
+                </div>
+
+
+                <div class="student-footer">
+
+                    <span>
+                        Phone event detected
+                    </span>
+
+                    <button
+                        type="button"
+                        onclick="openStudentFromCard(this)">
+
+                        →
+
+                    </button>
+
+                </div>
+
+            </article>
+
+
+            <!-- =================================================
+                 STUDENT CARD 03
+            ================================================== -->
+
+            <article class="student-card purple-card student-overlap">
+
+                <div class="student-top">
+
+                    <div class="student-avatar avatar-purple">
+                        M
+                    </div>
+
+                    <span class="status-tag safe">
+                        ● STABLE
+                    </span>
+
+                </div>
+
+
+                <div class="student-name">
+                    Student 03
+                </div>
+
+
+                <div class="student-id">
+                    ID / STU-003
+                </div>
+
+
+                <div class="student-score">
+
+                    <div>
+
+                        <span>
+                            Trust
+                        </span>
+
+                        <strong>
+                            94
+                        </strong>
+
+                    </div>
+
+
+                    <div class="score-bar">
+
+                        <span style="width:94%"></span>
+
+                    </div>
+
+                </div>
+
+
+                <div class="student-footer">
+
+                    <span>
+                        Face detected
+                    </span>
+
+                    <button
+                        type="button"
+                        onclick="openStudentFromCard(this)">
+
+                        →
+
+                    </button>
+
+                </div>
+
+            </article>
+
+
+            <!-- =================================================
+                 STUDENT CARD 04
+            ================================================== -->
+
+            <article class="student-card pink-card">
+
+                <div class="student-top">
+
+                    <div class="student-avatar avatar-pink">
+                        S
+                    </div>
+
+                    <span class="status-tag danger">
+                        ● ALERT
+                    </span>
+
+                </div>
+
+
+                <div class="student-name">
+                    Student 04
+                </div>
+
+
+                <div class="student-id">
+                    ID / STU-004
+                </div>
+
+
+                <div class="student-score">
+
+                    <div>
+
+                        <span>
+                            Trust
+                        </span>
+
+                        <strong>
+                            48
+                        </strong>
+
+                    </div>
+
+
+                    <div class="score-bar">
+
+                        <span style="width:48%"></span>
+
+                    </div>
+
+                </div>
+
+
+                <div class="student-footer">
+
+                    <span>
+                        Multiple violations
+                    </span>
+
+                    <button
+                        type="button"
+                        onclick="openStudentFromCard(this)">
+
+                        →
+
+                    </button>
+
+                </div>
+
+            </article>
+
+
+        </div>
+
+    </div>
+
+
+    <!-- =====================================================
+         ATTENTION PANEL
+    ====================================================== -->
+
+    <aside class="attention-panel">
+
+
+        <div class="section-heading compact">
+
+            <div>
+
+                <div class="eyebrow">
+                    AI PRIORITY
+                </div>
+
+                <h2>
+                    Needs attention
+                </h2>
+
+            </div>
+
+            <div class="pulse-ring"></div>
+
+        </div>
+
+
+        <div id="attentionList">
+
+            <div class="attention-student">
+
+                <div class="attention-avatar">
+                    R
+                </div>
+
+                <div class="attention-info">
+
+                    <strong>
+                        Waiting for live data
+                    </strong>
+
+                    <span>
+                        No active alerts
+                    </span>
+
+                </div>
+
+                <div class="attention-score">
+                    —
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <button class="monitor-button"
+                onclick="openMonitoring()">
+
+            Monitor selected student
+
+            <span>
+                →
+            </span>
+
+        </button>
+
+    </aside>
+
+</section>
+
+
+<!-- =========================================================
+     LOWER SECTION
+========================================================= -->
+
+<section class="lower-area">
+
+
+    <!-- =====================================================
+         EXAM CARD
+    ====================================================== -->
+
+    <div class="exam-card">
+
+        <div class="exam-left">
+
+            <div class="eyebrow">
+                CURRENT EXAM
+            </div>
+
+            <h2 id="currentExamName">
+                No active exam
+            </h2>
+
+            <p id="currentExamSubject">
+                Create an exam to begin.
+            </p>
+
+
+            <div class="exam-meta">
+
+                <span id="examTimer">
+
+                    <i data-lucide="clock"></i>
+
+                    Loading timer...
+
+                </span>
+
+
+                <span>
+
+                    <i data-lucide="users"></i>
+
+                    <span id="examStudentCount">
+                        0
+                    </span>
+
+                    students
+
+                </span>
+
+            </div>
+
+        </div>
+
+
+        <div class="exam-progress">
+
+            <div class="progress-circle">
+
+                <strong id="examProgress">
+                    0%
+                </strong>
+
+                <span id="examProgressLabel">
+                    COMPLETE
+                </span>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- =====================================================
+         HOST EXAM
+    ====================================================== -->
+
+    <section class="host-exam-card"
+             onclick="openHostExam()">
+
+
+        <div class="host-exam-content">
+
+            <div class="host-exam-label">
+                EXAMINATION
+            </div>
+
+            <h2>
+                Host a new exam
+            </h2>
+
+            <p>
+                Create and launch an examination for your students.
+            </p>
+
+
+            <button class="host-exam-button"
+                    onclick="event.stopPropagation(); openHostExam()">
+
+                <span>
+                    Host Exam
+                </span>
+
+                <span class="host-arrow">
+                    ↗
+                </span>
+
+            </button>
+
+        </div>
+
+
+        <div class="host-animation">
+
+            <div class="host-orbit host-orbit-one"></div>
+
+            <div class="host-orbit host-orbit-two"></div>
+
+            <div class="host-orbit host-orbit-three"></div>
+
+
+            <div class="host-core">
+
+                <div class="core-ring"></div>
+
+                <span class="core-dot"></span>
+
+            </div>
+
+
+            <div class="host-particle particle-one"></div>
+
+            <div class="host-particle particle-two"></div>
+
+            <div class="host-particle particle-three"></div>
+
+        </div>
+
+    </section>
+
+
+    <!-- =====================================================
+         FOOTER
+    ====================================================== -->
+
+    <footer>
+
+        <span>
+            PROCTIFY
+        </span>
+
+        <span>
+            AI-ASSISTED EXAM INTEGRITY
+        </span>
+
+        <span>
+            SYSTEM ONLINE
+        </span>
+
+    </footer>
+
+
+</section>
+
+
+</main>
+
+
+<!-- =========================================================
+     JAVASCRIPT
+     BACKEND CONNECTION
+========================================================= -->
+
+<script>
+
+
+/* =========================================================
+   LUCIDE ICONS
+========================================================= */
+
+lucide.createIcons();
+
+
+/* =========================================================
+   GLOBAL CURRENT STUDENT
+========================================================= */
+
+let currentStudentId = null;
+
+
+/* =========================================================
+   STUDENT MONITORING
+========================================================= */
+
+function openStudent(studentId) {
+
+    if (!studentId) {
+
+        console.log(
+            "No student selected."
+        );
+
+        return;
+
+    }
+
+    window.location.href =
+        "/monitor/" +
+        encodeURIComponent(studentId);
+
+}
+
+
+/* =========================================================
+   OPEN STUDENT FROM CARD
+========================================================= */
+
+function openStudentFromCard(button) {
+
+    const card =
+        button.closest(".student-card");
+
+    if (!card) {
+        return;
+    }
+
+
+    const studentIdElement =
+        card.querySelector(".student-id");
+
+    if (!studentIdElement) {
+        return;
+    }
+
+
+    const rawText =
+        studentIdElement.innerText;
+
+
+    /*
+     * Example:
+     *
+     * ID / STUDENT_001
+     *
+     */
+
+    const studentId =
+        rawText
+            .replace("ID /", "")
+            .trim();
+
+
+    if (studentId) {
+
+        openStudent(studentId);
+
+    }
+
+}
+
+
+/* =========================================================
+   MONITOR SELECTED STUDENT
+========================================================= */
+
+function openMonitoring() {
+
+    if (currentStudentId) {
+
+        openStudent(
+            currentStudentId
+        );
+
+        return;
+
+    }
+
+
+    /*
+     * If there is no selected student,
+     * fetch the live student list once.
+     */
+
+    fetch("/api/students")
+
+        .then(response =>
+            response.json()
+        )
+
+        .then(data => {
+
+            if (
+                data &&
+                Array.isArray(data.students) &&
+                data.students.length > 0
+            ) {
+
+                openStudent(
+                    data.students[0].student_id
+                );
+
+            }
+
+            else {
+
+                console.log(
+                    "No student available for monitoring."
+                );
+
+            }
+
+        })
+
+        .catch(error => {
+
+            console.log(
+                "Unable to open monitoring:",
+                error
+            );
+
+        });
+
+}
+
+
+/* =========================================================
+   TEACHER / STUDENT MESSAGES
+========================================================= */
+
+function openSubmissions() {
+
+    window.location.href =
+        "/submissions";
+
+}
+
+
+function openMessages() {
+
+    console.log(
+        "Student message panel requested."
+    );
+
+}
+/* =========================================================
+   UPDATE MONITORING HEALTH
+========================================================= */
+
+function updateMonitoringHealth(students) {
+
+    const cameraDot =
+        document.getElementById("cameraHealthDot");
+
+    const audioDot =
+        document.getElementById("audioHealthDot");
+
+    const aiDot =
+        document.getElementById("aiHealthDot");
+
+    const tabDot =
+        document.getElementById("tabHealthDot");
+
+
+    /*
+     * No students are currently online.
+     */
+
+    if (
+        !Array.isArray(students) ||
+        students.length === 0
+    ) {
+
+        if (cameraDot)
+            cameraDot.classList.remove("online");
+
+        if (audioDot)
+            audioDot.classList.remove("online");
+
+        if (aiDot)
+            aiDot.classList.remove("online");
+
+        if (tabDot)
+            tabDot.classList.remove("online");
+
+        return;
+    }
+
+
+    /*
+     * CAMERA
+     *
+     * Green only when ALL online students
+     * have an available camera.
+     */
+
+    const cameraHealthy =
+        students.every(
+            student =>
+                student.camera_available === true
+        );
+
+
+    /*
+     * AUDIO
+     */
+
+    const audioHealthy =
+        students.every(
+            student =>
+                student.audio_available === true
+        );
+
+
+    /*
+     * AI
+     */
+
+    const aiHealthy =
+        students.every(
+            student =>
+                student.ai_available === true
+        );
+
+
+    /*
+     * TAB
+     *
+     * Browser-tab monitoring is not connected yet.
+     */
+
+    const tabHealthy =
+        students.every(
+            student =>
+                student.tab_available === true
+        );
+
+
+    /*
+     * Apply states
+     */
+
+    if (cameraDot) {
+
+        cameraDot.classList.toggle(
+            "online",
+            cameraHealthy
+        );
+
+    }
+
+
+    if (audioDot) {
+
+        audioDot.classList.toggle(
+            "online",
+            audioHealthy
+        );
+
+    }
+
+
+    if (aiDot) {
+
+        aiDot.classList.toggle(
+            "online",
+            aiHealthy
+        );
+
+    }
+
+
+    if (tabDot) {
+
+        tabDot.classList.toggle(
+            "online",
+            tabHealthy
+        );
+
+    }
+
+}
+/* =========================================================
+   CONVERT BACKEND RESPONSE TO STUDENT ARRAY
+========================================================= */
+
+function extractStudents(data) {
+
+    /*
+     * CASE 1:
+     *
+     * Backend returns:
+     *
+     * {
+     *     "student_id": "STUDENT_001",
+     *     ...
+     * }
+     *
+     */
+
+    if (
+        data &&
+        typeof data === "object" &&
+        data.student_id
+    ) {
+
+        return [data];
+
+    }
+
+
+    /*
+     * CASE 2:
+     *
+     * Backend returns:
+     *
+     * {
+     *     "students": [...]
+     * }
+     *
+     */
+
+    if (
+        data &&
+        Array.isArray(data.students)
+    ) {
+
+        return data.students;
+
+    }
+
+
+    return [];
+
+}
+
+
+/* =========================================================
+   UPDATE STATUS TAG
+========================================================= */
+
+function updateStatusTag(
+    statusTag,
+    risk
+) {
+
+    if (!statusTag) {
+        return;
+    }
+
+
+    risk =
+        String(
+            risk || "LOW"
+        ).toUpperCase();
+
+
+    statusTag.classList.remove(
+        "safe",
+        "warning",
+        "danger"
+    );
+
+
+    if (risk === "LOW") {
+
+        statusTag.classList.add(
+            "safe"
+        );
+
+        statusTag.innerText =
+            "● STABLE";
+
+    }
+
+
+    else if (
+        risk === "MEDIUM"
+    ) {
+
+        statusTag.classList.add(
+            "warning"
+        );
+
+        statusTag.innerText =
+            "● REVIEW";
+
+    }
+
+
+    else {
+
+        statusTag.classList.add(
+            "danger"
+        );
+
+        statusTag.innerText =
+            "● ALERT";
+
+    }
+
+}
+
+
+/* =========================================================
+   GET STUDENT ACTIVITY TEXT
+========================================================= */
+
+function getActivityText(student) {
+    /*
+    * TAB SWITCH
+    *
+    * Highest priority while the
+    * tab violation is active.
+    */
+
+    if (
+        String(
+            student.tab_status || ""
+        ).toUpperCase() === "VIOLATION"
+    ) {
+
+        return (
+            "⚠ Tab switch detected (" +
+            Number(
+                student.tab_switch_count || 0
+            ) +
+            ")"
+        );
+
+    }
+    /*
+     * Phone has highest priority.
+     */
+
+    if (
+        Boolean(
+            student.phone
+        ) ||
+        Number(
+            student.phone_count || 0
+        ) > 0
+    ) {
+
+        return "Phone event detected";
+
+    }
+
+
+    /*
+     * Multiple persons.
+     */
+
+    if (
+        Number(
+            student.person_count || 0
+        ) > 1
+    ) {
+
+        return "Multiple persons detected";
+
+    }
+
+
+    /*
+     * Use last event from backend.
+     */
+
+    if (
+        student.last_event &&
+        String(
+            student.last_event
+        ).trim() !== ""
+    ) {
+
+        return String(
+            student.last_event
+        );
+
+    }
+
+
+    /*
+     * Head direction.
+     */
+
+    if (
+        student.head_direction &&
+        student.head_direction !== "LOOK_CENTER"
+    ) {
+
+        return String(
+            student.head_direction
+        );
+
+    }
+
+
+    /*
+     * Gaze.
+     */
+
+    if (
+        student.gaze &&
+        student.gaze !== "CENTER"
+    ) {
+
+        return (
+            "Looking " +
+            String(
+                student.gaze
+            ).toLowerCase()
+        );
+
+    }
+
+
+    /*
+     * Online/offline state.
+     */
+
+    if (
+        String(
+            student.status
+        ).toUpperCase() === "ONLINE"
+    ) {
+
+        return "Monitoring active";
+
+    }
+
+
+    return "Monitoring offline";
+
+}
+/* =========================================================
+   UPDATE INDIVIDUAL STUDENT HEALTH
+========================================================= */
+
+function updateStudentHealth(
+    card,
+    student
+) {
+
+    if (!card || !student) {
+        return;
+    }
+
+
+    let healthRow =
+        card.querySelector(
+            ".student-health"
+        );
+
+
+    /*
+     * Create the health row only once.
+     */
+
+    if (!healthRow) {
+
+        healthRow =
+            document.createElement(
+                "div"
+            );
+
+        healthRow.className =
+            "student-health";
+
+        healthRow.innerHTML = `
+
+            <div class="student-health-item">
+                <span
+                    class="student-health-dot"
+                    data-health="camera">
+                </span>
+                CAM
+            </div>
+
+            <div class="student-health-item">
+                <span
+                    class="student-health-dot"
+                    data-health="audio">
+                </span>
+                AUD
+            </div>
+
+            <div class="student-health-item">
+                <span
+                    class="student-health-dot"
+                    data-health="ai">
+                </span>
+                AI
+            </div>
+
+            <div class="student-health-item">
+                <span
+                    class="student-health-dot"
+                    data-health="tab">
+                </span>
+                TAB
+            </div>
+
+        `;
+
+
+        /*
+         * Put the health row just before
+         * the student footer.
+         */
+
+        const footer =
+            card.querySelector(
+                ".student-footer"
+            );
+
+
+        if (footer) {
+
+            card.insertBefore(
+                healthRow,
+                footer
+            );
+
+        }
+
+        else {
+
+            card.appendChild(
+                healthRow
+            );
+
+        }
+
+    }
+
+
+    const isOnline =
+        String(
+            student.status || ""
+        ).toUpperCase() === "ONLINE";
+
+
+    /*
+     * Update each individual dot.
+     */
+
+    const cameraDot =
+        healthRow.querySelector(
+            '[data-health="camera"]'
+        );
+
+    const audioDot =
+        healthRow.querySelector(
+            '[data-health="audio"]'
+        );
+
+    const aiDot =
+        healthRow.querySelector(
+            '[data-health="ai"]'
+        );
+
+    const tabDot =
+        healthRow.querySelector(
+            '[data-health="tab"]'
+        );
+
+
+    /*
+     * Camera
+     */
+
+    if (cameraDot) {
+
+        cameraDot.classList.toggle(
+            "online",
+            isOnline &&
+            student.camera_available === true
+        );
+
+    }
+
+
+    /*
+     * Audio
+     */
+
+    if (audioDot) {
+
+        audioDot.classList.toggle(
+            "online",
+            isOnline &&
+            student.audio_available === true
+        );
+
+    }
+
+
+    /*
+     * AI
+     */
+
+    if (aiDot) {
+
+        aiDot.classList.toggle(
+            "online",
+            isOnline &&
+            student.ai_available === true
+        );
+
+    }
+
+
+    /*
+    * TAB MONITORING
+    *
+    * Tab monitoring is handled by the
+    * student's examination page.
+    *
+    * If the student is online and
+    * tab_available is not explicitly false,
+    * show TAB as active.
+    */
+
+    if (tabDot) {
+
+        const tabAvailable =
+            student.tab_available !== false;
+
+        tabDot.classList.toggle(
+            "online",
+            isOnline &&
+            tabAvailable
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   UPDATE STUDENT CARD
+========================================================= */
+
+function updateStudentCard(
+    card,
+    student
+) {
+
+    if (!card || !student) {
+        return;
+    }
+
+
+    /*
+     * Save currently selected student.
+     */
+
+    currentStudentId =
+        student.student_id || null;
+
+
+    /* -------------------------------------------------------
+       STUDENT NAME
+    ------------------------------------------------------- */
+
+    const nameElement =
+        card.querySelector(
+            ".student-name"
+        );
+
+
+    if (nameElement) {
+
+        nameElement.innerText =
+            student.student_id ||
+            "Unknown Student";
+
+    }
+
+
+    /* -------------------------------------------------------
+       STUDENT ID
+    ------------------------------------------------------- */
+
+    const idElement =
+        card.querySelector(
+            ".student-id"
+        );
+
+
+    if (idElement) {
+
+        idElement.innerText =
+            "ID / " +
+            (
+                student.student_id ||
+                "UNKNOWN"
+            );
+
+    }
+
+
+    /* -------------------------------------------------------
+       TRUST SCORE
+    ------------------------------------------------------- */
+
+    let score =
+        Number(
+            student.trust_score
+        );
+
+
+    if (
+        Number.isNaN(score)
+    ) {
+
+        score = 100;
+
+    }
+
+
+    score =
+        Math.max(
+            0,
+            Math.min(
+                100,
+                score
+            )
+        );
+
+
+    const scoreElement =
+        card.querySelector(
+            ".student-score strong"
+        );
+
+
+    if (scoreElement) {
+
+        scoreElement.innerText =
+            score;
+
+    }
+
+
+    /* -------------------------------------------------------
+       TRUST SCORE BAR
+    ------------------------------------------------------- */
+
+    const scoreBar =
+        card.querySelector(
+            ".score-bar span"
+        );
+
+
+    if (scoreBar) {
+
+        scoreBar.style.width =
+            score + "%";
+
+    }
+
+
+    /* -------------------------------------------------------
+       STATUS / RISK
+    ------------------------------------------------------- */
+
+    const statusTag =
+        card.querySelector(
+            ".status-tag"
+        );
+
+
+    updateStatusTag(
+        statusTag,
+        student.risk_level
+    );
+    /* -------------------------------------------------------
+    INDIVIDUAL MONITORING HEALTH
+    ------------------------------------------------------- */
+
+    updateStudentHealth(
+        card,
+        student
+    );
+
+
+    /* -------------------------------------------------------
+       ACTIVITY
+    ------------------------------------------------------- */
+
+    const footerText =
+        card.querySelector(
+            ".student-footer span"
+        );
+
+
+    if (footerText) {
+
+        footerText.innerText =
+            getActivityText(
+                student
+            );
+
+    }
+
+
+    /* -------------------------------------------------------
+       CARD ARROW
+    ------------------------------------------------------- */
+
+    const arrowButton =
+        card.querySelector(
+            ".student-footer button"
+        );
+
+
+    if (arrowButton) {
+
+        arrowButton.onclick =
+            function () {
+
+                openStudent(
+                    student.student_id
+                );
+
+            };
+
+    }
+
+}
+
+
+/* =========================================================
+   UPDATE ATTENTION PANEL
+========================================================= */
+
+function updateAttentionPanel(
+    students
+) {
+
+    const attentionList =
+        document.getElementById(
+            "attentionList"
+        );
+
+
+    if (!attentionList) {
+        return;
+    }
+
+
+    /*
+     * Only students that actually need attention.
+     *
+     * MEDIUM and HIGH risk.
+     */
+
+    const attentionStudents =
+        students.filter(
+            student => {
+
+                const risk =
+                    String(
+                        student.risk_level ||
+                        "LOW"
+                    ).toUpperCase();
+
+
+                const tabViolation =
+                    String(
+                        student.tab_status ||
+                        ""
+                    ).toUpperCase() ===
+                    "VIOLATION";
+
+
+                return (
+                    risk === "MEDIUM" ||
+                    risk === "HIGH" ||
+                    tabViolation
+                );
+
+            }
+        );
+
+
+    /*
+     * No alerts.
+     */
+
+    if (
+        attentionStudents.length === 0
+    ) {
+
+        attentionList.innerHTML = `
+
+            <div class="attention-student">
+
+                <div class="attention-avatar">
+                    ✓
+                </div>
+
+                <div class="attention-info">
+
+                    <strong>
+                        All students stable
+                    </strong>
+
+                    <span>
+                        No active alerts
+                    </span>
+
+                </div>
+
+                <div class="attention-score">
+                    —
+                </div>
+
+            </div>
+
+        `;
+
+        return;
+
+    }
+
+
+    /*
+     * Build attention cards.
+     */
+
+    attentionList.innerHTML = "";
+
+
+    attentionStudents.forEach(
+        student => {
+
+            const score =
+                Number(
+                    student.trust_score ?? 100
+                );
+
+
+            const risk =
+                String(
+                    student.risk_level ||
+                    "LOW"
+                ).toUpperCase();
+
+
+            const isHigh =
+                risk === "HIGH";
+
+
+            const avatarClass =
+                isHigh
+                    ? "attention-avatar red"
+                    : "attention-avatar";
+
+
+            const scoreClass =
+                isHigh
+                    ? "attention-score red-text"
+                    : "attention-score";
+
+
+            const initial =
+                String(
+                    student.student_id ||
+                    "S"
+                ).charAt(0).toUpperCase();
+
+
+            const activity =
+                getActivityText(
+                    student
+                );
+
+
+            const item =
+                document.createElement(
+                    "div"
+                );
+
+
+            item.className =
+                "attention-student";
+
+
+            item.innerHTML = `
+
+                <div class="${avatarClass}">
+                    ${initial}
+                </div>
+
+                <div class="attention-info">
+
+                    <strong>
+                        ${student.student_id || "Unknown Student"}
+                    </strong>
+
+                    <span>
+                        ${activity}
+                    </span>
+
+                </div>
+
+                <div class="${scoreClass}">
+                    ${score}
+                </div>
+
+            `;
+
+
+            item.style.cursor =
+                "pointer";
+
+
+            item.onclick =
+                function () {
+
+                    openStudent(
+                        student.student_id
+                    );
+
+                };
+
+
+            attentionList.appendChild(
+                item
+            );
+
+        }
+    );
+
+}
+
+/* =========================================================
+   UPDATE SUBMISSIONS
+========================================================= */
+
+async function updateSubmissions() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/submissions",
+                {
+                    cache: "no-store"
+                }
+            );
+
+
+        if (!response.ok) {
+
+            console.log(
+                "Unable to load submissions."
+            );
+
+            return;
+
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            !data ||
+            data.success !== true
+        ) {
+
+            return;
+
+        }
+
+
+        /* -------------------------------------------------
+           SUBMITTED
+        ------------------------------------------------- */
+
+        const submittedElement =
+            document.getElementById(
+                "submittedStudents"
+            );
+
+
+        if (submittedElement) {
+
+            submittedElement.innerText =
+                data.submitted || 0;
+
+        }
+
+
+        /* -------------------------------------------------
+           EVALUATED
+        ------------------------------------------------- */
+
+        const evaluatedElement =
+            document.getElementById(
+                "evaluatedStudents"
+            );
+
+
+        if (evaluatedElement) {
+
+            evaluatedElement.innerText =
+                data.evaluated || 0;
+
+        }
+
+
+        /* -------------------------------------------------
+           PENDING
+        ------------------------------------------------- */
+
+        const pendingElement =
+            document.getElementById(
+                "pendingSubmissions"
+            );
+
+
+        if (pendingElement) {
+
+            pendingElement.innerText =
+                data.pending || 0;
+
+        }
+
+
+        console.log(
+            "PROCTIFY SUBMISSIONS:",
+            data
+        );
+
+    }
+
+
+    catch (error) {
+
+        console.log(
+            "Waiting for submission data...",
+            error
+        );
+
+    }
+
+}
+
+/* =========================================================
+   UPDATE MAIN DASHBOARD
+========================================================= */
+
+async function updateDashboard() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/status",
+                {
+                    cache: "no-store"
+                }
+            );
+
+
+        if (!response.ok) {
+
+            console.log(
+                "Unable to read live status."
+            );
+
+            return;
+
+        }
+
+
+        const data =
+            await response.json();
+
+
+        /*
+         * IMPORTANT:
+         *
+         * Your Flask backend returns a single
+         * student object when only one student
+         * exists.
+         *
+         * extractStudents() handles that.
+         */
+
+        const students =
+            extractStudents(
+                data
+            );
+        /* =====================================================
+   MONITORING HEALTH
+===================================================== */
+
+        updateMonitoringHealth(
+            students
+        );
+
+
+        /* =====================================================
+           TOTAL STUDENTS
+        ===================================================== */
+
+        const totalStudents =
+            students.length;
+
+
+        const totalElement =
+            document.getElementById(
+                "totalStudents"
+            );
+
+
+        if (totalElement) {
+
+            totalElement.innerText =
+                totalStudents;
+
+        }
+
+
+        /* =====================================================
+           ACTIVE STUDENTS
+        ===================================================== */
+
+        const activeStudents =
+            students.filter(
+                student =>
+                    String(
+                        student.status
+                    ).toUpperCase() ===
+                    "ONLINE"
+            ).length;
+
+
+        const activeElement =
+            document.getElementById(
+                "activeStudents"
+            );
+
+
+        if (activeElement) {
+
+            activeElement.innerText =
+                activeStudents;
+
+        }
+
+
+        /* =====================================================
+           LIVE PULSE
+        ===================================================== */
+
+        const pulseElement =
+            document.getElementById(
+                "pulseCount"
+            );
+
+
+        if (pulseElement) {
+
+            pulseElement.innerText =
+                activeStudents;
+
+        }
+
+
+        /* =====================================================
+           EXAM STUDENT COUNT
+        ===================================================== */
+
+        const examCountElement =
+            document.getElementById(
+                "examStudentCount"
+            );
+
+
+        if (examCountElement) {
+
+            examCountElement.innerText =
+                totalStudents;
+
+        }
+
+
+        /* =====================================================
+           STUDENT CARDS
+        ===================================================== */
+
+        const cards =
+            document.querySelectorAll(
+                ".student-card"
+            );
+
+
+        /*
+         * Hide unused design cards.
+         *
+         * The actual dashboard design remains unchanged.
+         */
+
+        cards.forEach(
+            (
+                card,
+                index
+            ) => {
+
+                if (
+                    index >=
+                    students.length
+                ) {
+
+                    card.style.display =
+                        "none";
+
+                }
+
+                else {
+
+                    card.style.display =
+                        "";
+
+                }
+
+            }
+        );
+
+
+        /*
+         * Update cards using live backend data.
+         */
+
+        students.forEach(
+            (
+                student,
+                index
+            ) => {
+
+                if (
+                    !cards[index]
+                ) {
+
+                    return;
+
+                }
+
+
+                updateStudentCard(
+                    cards[index],
+                    student
+                );
+
+            }
+        );
+        /* =====================================================
+        MONITORING HEALTH
+        ===================================================== */
+
+        if (students.length > 0) {
+
+            /*
+            * Use the first currently online student
+            * as the live monitoring health source.
+            */
+
+/* =====================================================
+   MONITORING HEALTH — ALL ONLINE STUDENTS
+===================================================== */
+
+            const onlineStudents =
+                students.filter(
+                    student =>
+                        String(
+                            student.status || ""
+                        ).toUpperCase() === "ONLINE"
+                );
+
+            updateMonitoringHealth(
+                onlineStudents
+            );
+
+            updateMonitoringHealth(
+                liveStudent || null
+            );
+
+        }
+        else {
+
+            updateMonitoringHealth(
+                null
+            );
+
+        }
+
+        /* =====================================================
+           ATTENTION PANEL
+        ===================================================== */
+
+        updateAttentionPanel(
+            students
+        );
+
+
+        /* =====================================================
+           MESSAGE COUNT
+           Only update if backend actually supplies it.
+        ===================================================== */
+
+        if (
+            data.message_count !==
+            undefined
+        ) {
+
+            const messageCount =
+                document.getElementById(
+                    "messageCount"
+                );
+
+
+            if (messageCount) {
+
+                messageCount.innerText =
+                    data.message_count;
+
+            }
+
+        }
+
+
+        /* =====================================================
+           DEBUG INFORMATION
+        ===================================================== */
+
+        console.log(
+            "PROCTIFY LIVE DATA:",
+            students
+        );
+
+    }
+
+
+    catch (error) {
+
+        console.log(
+            "Waiting for live monitoring data...",
+            error
+        );
+
+    }
+
+}
+/* =========================================================
+   CURRENT EXAM
+========================================================= */
+
+/* =========================================================
+   CURRENT EXAM + TIMER
+========================================================= */
+
+let currentExam = null;
+
+let examTimerInterval = null;
+
+
+async function updateCurrentExam() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/exams",
+                {
+                    cache: "no-store"
+                }
+            );
+
+
+        if (!response.ok) {
+
+            console.log(
+                "Unable to load exams."
+            );
+
+            return;
+
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            !data.success ||
+            !Array.isArray(data.exams) ||
+            data.exams.length === 0
+        ) {
+
+            currentExam = null;
+
+            stopExamTimer();
+
+
+            document.getElementById(
+                "currentExamName"
+            ).innerText =
+                "No active exam";
+
+
+            document.getElementById(
+                "currentExamSubject"
+            ).innerText =
+                "Create an exam to begin.";
+
+
+            document.getElementById(
+                "examTimer"
+            ).innerHTML = `
+
+                <i data-lucide="clock"></i>
+
+                No active exam
+
+            `;
+
+
+            document.getElementById(
+                "examProgress"
+            ).innerText =
+                "0%";
+
+
+            lucide.createIcons();
+
+            return;
+
+        }
+
+
+/*
+ * Only ACTIVE exams belong in the
+ * current exam section.
+ */
+
+        const activeExams =
+            data.exams.filter(
+                exam =>
+                    String(
+                        exam.status || ""
+                    ).toUpperCase() === "ACTIVE"
+            );
+
+
+        if (activeExams.length === 0) {
+
+            currentExam = null;
+
+            stopExamTimer();
+
+
+            document.getElementById(
+                "currentExamName"
+            ).innerText =
+                "No active exam";
+
+
+            document.getElementById(
+                "currentExamSubject"
+            ).innerText =
+                "Create an exam to begin.";
+
+
+            document.getElementById(
+                "examTimer"
+            ).innerHTML = `
+                <i data-lucide="clock"></i>
+                No active exam
+            `;
+
+
+            document.getElementById(
+                "examProgress"
+            ).innerText =
+                "0%";
+
+
+            lucide.createIcons();
+
+            return;
+        }
+
+
+        /*
+        * Newest ACTIVE exam first.
+        */
+
+        activeExams.sort(
+            (a, b) =>
+                String(
+                    b.created_at || ""
+                ).localeCompare(
+                    String(
+                        a.created_at || ""
+                    )
+                )
+        );
+
+
+        const availableExams =
+            data.exams.filter(
+                exam => {
+
+                    const status =
+                        String(
+                            exam.status || ""
+                        ).toUpperCase();
+
+                    return (
+                        status === "SCHEDULED" ||
+                        status === "ACTIVE"
+                    );
+
+                }
+            );
+
+
+        if (
+            availableExams.length === 0
+        ) {
+
+            currentExam = null;
+
+            stopExamTimer();
+
+            document.getElementById(
+                "currentExamName"
+            ).innerText =
+                "No upcoming exam";
+
+            document.getElementById(
+                "currentExamSubject"
+            ).innerText =
+                "Create an exam to begin.";
+
+            document.getElementById(
+                "examTimer"
+            ).innerHTML = `
+                <i data-lucide="clock"></i>
+                No upcoming exam
+            `;
+
+            document.getElementById(
+                "examProgress"
+            ).innerText =
+                "0%";
+
+            lucide.createIcons();
+
+            return;
+        }
+
+
+        availableExams.sort(
+            (a, b) =>
+                String(
+                    a.scheduled_start || ""
+                ).localeCompare(
+                    String(
+                        b.scheduled_start || ""
+                    )
+                )
+        );
+
+
+        currentExam =
+            availableExams[0];
+
+
+        /* -------------------------------------------------
+           EXAM NAME
+        ------------------------------------------------- */
+
+        document.getElementById(
+            "currentExamName"
+        ).innerText =
+            currentExam.exam_name ||
+            "Unnamed Exam";
+
+
+        /* -------------------------------------------------
+           SUBJECT
+        ------------------------------------------------- */
+
+        document.getElementById(
+            "currentExamSubject"
+        ).innerText =
+            currentExam.subject ||
+            "Subject not specified";
+
+
+        /* -------------------------------------------------
+           START TIMER
+        ------------------------------------------------- */
+
+        startExamTimer(
+            currentExam
+        );
+
+
+        lucide.createIcons();
+
+    }
+
+
+    catch (error) {
+
+        console.log(
+            "Current exam update error:",
+            error
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   START EXAM TIMER
+========================================================= */
+
+function startExamTimer(exam) {
+
+    stopExamTimer();
+
+
+    if (!exam) {
+        return;
+    }
+
+
+    const status =
+        String(
+            exam.status || ""
+        ).toUpperCase();
+
+
+    /* =====================================================
+       SCHEDULED EXAM
+    ===================================================== */
+
+    if (status === "SCHEDULED") {
+
+        const scheduledTime =
+            new Date(
+                exam.scheduled_start
+            ).getTime();
+
+
+        if (
+            Number.isNaN(
+                scheduledTime
+            )
+        ) {
+
+            document.getElementById(
+                "examTimer"
+            ).innerHTML = `
+                <i data-lucide="clock"></i>
+                Schedule time unavailable
+            `;
+
+            lucide.createIcons();
+
+            return;
+        }
+
+
+        function updateScheduledTimer() {
+
+            const remaining =
+                Math.max(
+                    0,
+                    scheduledTime -
+                    Date.now()
+                );
+
+
+            if (remaining <= 0) {
+
+                document.getElementById(
+                    "examTimer"
+                ).innerHTML = `
+                    <i data-lucide="play"></i>
+                    Starting exam...
+                `;
+
+                lucide.createIcons();
+
+                /*
+                 * Refresh the exam data.
+                 * Flask will automatically change
+                 * SCHEDULED → ACTIVE.
+                 */
+
+                updateCurrentExam();
+
+                return;
+            }
+
+
+            const totalSeconds =
+                Math.ceil(
+                    remaining / 1000
+                );
+
+
+            const minutes =
+                Math.floor(
+                    totalSeconds / 60
+                );
+
+
+            const seconds =
+                totalSeconds % 60;
+
+
+            document.getElementById(
+                "examTimer"
+            ).innerHTML = `
+
+                <i data-lucide="clock"></i>
+
+                Starts in
+                ${String(minutes).padStart(2, "0")}:
+                ${String(seconds).padStart(2, "0")}
+
+            `;
+
+            lucide.createIcons();
+
+        }
+
+
+        updateScheduledTimer();
+
+
+        examTimerInterval =
+            setInterval(
+                updateScheduledTimer,
+                1000
+            );
+
+
+        return;
+    }
+
+
+    /* =====================================================
+       COMPLETED EXAM
+    ===================================================== */
+
+    if (status === "COMPLETED") {
+
+        showExamCompleted();
+
+        return;
+    }
+
+
+    /* =====================================================
+       ACTIVE EXAM
+    ===================================================== */
+
+    if (status === "ACTIVE") {
+
+        const durationMinutes =
+            Number(
+                exam.duration || 0
+            );
+
+
+        if (
+            durationMinutes <= 0
+        ) {
+
+            return;
+        }
+
+
+        /*
+         * IMPORTANT:
+         *
+         * Active timer begins from
+         * scheduled_start, NOT created_at.
+         */
+
+        const startTime =
+            new Date(
+                exam.scheduled_start
+            ).getTime();
+
+
+        if (
+            Number.isNaN(
+                startTime
+            )
+        ) {
+
+            console.log(
+                "Invalid scheduled start time."
+            );
+
+            return;
+        }
+
+
+        const durationMilliseconds =
+            durationMinutes *
+            60 *
+            1000;
+
+
+        function updateActiveTimer() {
+
+            const now =
+                Date.now();
+
+
+            const elapsed =
+                now -
+                startTime;
+
+
+            const remaining =
+                Math.max(
+                    0,
+                    durationMilliseconds -
+                    elapsed
+                );
+
+
+            const progress =
+                Math.min(
+                    100,
+                    Math.floor(
+                        (
+                            elapsed /
+                            durationMilliseconds
+                        ) * 100
+                    )
+                );
+
+
+            const progressElement =
+                document.getElementById(
+                    "examProgress"
+                );
+
+
+            if (progressElement) {
+
+                progressElement.innerText =
+                    progress + "%";
+
+            }
+
+
+            const totalSeconds =
+                Math.ceil(
+                    remaining / 1000
+                );
+
+
+            const minutes =
+                Math.floor(
+                    totalSeconds / 60
+                );
+
+
+            const seconds =
+                totalSeconds % 60;
+
+
+            const timerElement =
+                document.getElementById(
+                    "examTimer"
+                );
+
+
+            if (
+                remaining <= 0
+            ) {
+
+                if (timerElement) {
+
+                    timerElement.innerHTML = `
+                        <i data-lucide="check-circle"></i>
+                        Exam completed
+                    `;
+
+                }
+
+
+                lucide.createIcons();
+
+
+                stopExamTimer();
+
+
+                return;
+            }
+
+
+            if (timerElement) {
+
+                timerElement.innerHTML = `
+
+                    <i data-lucide="clock"></i>
+
+                    ${String(minutes).padStart(2, "0")}:
+                    ${String(seconds).padStart(2, "0")}
+
+                `;
+
+            }
+
+
+            lucide.createIcons();
+
+        }
+
+
+        updateActiveTimer();
+
+
+        examTimerInterval =
+            setInterval(
+                updateActiveTimer,
+                1000
+            );
+
+    }
+
+}
+
+
+/* =========================================================
+   FORMAT TIME
+========================================================= */
+
+function formatTime(
+    minutes,
+    seconds
+) {
+
+    return (
+
+        String(
+            minutes
+        ).padStart(
+            2,
+            "0"
+        )
+
+        +
+
+        ":" +
+
+        String(
+            seconds
+        ).padStart(
+            2,
+            "0"
+        )
+
+    );
+
+}
+
+
+/* =========================================================
+   STOP TIMER
+========================================================= */
+
+function stopExamTimer() {
+
+    if (
+        examTimerInterval !== null
+    ) {
+
+        clearInterval(
+            examTimerInterval
+        );
+
+        examTimerInterval =
+            null;
+
+    }
+
+}
+
+
+/* =========================================================
+   COMPLETE EXAM
+========================================================= */
+
+async function completeExam(
+    examId
+) {
+
+    if (!examId) {
+        return;
+    }
+
+
+    try {
+
+        const response =
+            await fetch(
+
+                "/api/exams/" +
+                encodeURIComponent(
+                    examId
+                ) +
+                "/complete",
+
+                {
+
+                    method: "POST"
+
+                }
+
+            );
+
+
+        const result =
+            await response.json();
+
+
+        if (
+            result.success
+        ) {
+
+            console.log(
+                "PROCTIFY EXAM COMPLETED:",
+                result.exam
+            );
+
+            currentExam =
+                result.exam;
+
+        }
+
+
+    }
+
+    catch (error) {
+
+        console.log(
+            "Unable to complete exam:",
+            error
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   SHOW COMPLETED EXAM
+========================================================= */
+
+function showExamCompleted() {
+
+    const timerElement =
+        document.getElementById(
+            "examTimer"
+        );
+
+
+    if (timerElement) {
+
+        timerElement.innerHTML = `
+
+            <i data-lucide="clock"></i>
+
+            EXAM COMPLETED
+
+        `;
+
+    }
+
+
+    const progressElement =
+        document.getElementById(
+            "examProgress"
+        );
+
+
+    if (progressElement) {
+
+        progressElement.innerText =
+            "100%";
+
+    }
+
+
+    const label =
+        document.getElementById(
+            "examProgressLabel"
+        );
+
+
+    if (label) {
+
+        label.innerText =
+            "COMPLETED";
+
+    }
+
+
+    lucide.createIcons();
+
+}
+
+
+updateCurrentExam();
+
+/* =========================================================
+   START LIVE UPDATES
+========================================================= */
+
+updateDashboard();
+updateSubmissions();
+
+
+/*
+ * Refresh every 2 seconds.
+ */
+
+setInterval(
+    updateDashboard,
+    2000
+);
+setInterval(
+    updateSubmissions,
+    2000
+);
+
+
+/* =========================================================
+   HOST EXAM
+========================================================= */
+
+function openHostExam() {
+
+    window.location.href =
+        "/host-exam";
+
+}
+
+</script>
+
+
+</body>
+
+</html>

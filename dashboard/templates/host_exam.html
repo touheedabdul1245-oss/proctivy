@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+```
+<title>Host Exam - PROCTIFY</title>
+
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='style.css') }}">
+
+<style>
+    .host-page {
+        max-width: 1100px;
+        margin: 0 auto;
+    }
+
+    .host-card {
+        background: rgba(255,255,255,.88);
+        border: 1px solid #e7e7e0;
+        border-radius: 28px;
+        padding: 30px;
+        box-shadow: 0 12px 35px rgba(55,55,45,.06);
+        margin-bottom: 24px;
+    }
+
+    .host-card h2 {
+        font-family: "Manrope", sans-serif;
+        font-size: 20px;
+        margin-bottom: 20px;
+    }
+
+    .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .form-group.full {
+        grid-column: 1 / -1;
+    }
+
+    .form-group label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        color: #77776f;
+    }
+
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+        width: 100%;
+        padding: 13px 15px;
+        border: 1px solid #deded8;
+        border-radius: 13px;
+        background: #fafaf7;
+        color: #292927;
+        font-family: inherit;
+        font-size: 13px;
+        outline: none;
+    }
+
+    .form-group textarea {
+        min-height: 100px;
+        resize: vertical;
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus,
+    .form-group select:focus {
+        border-color: #8776a8;
+        box-shadow: 0 0 0 3px rgba(135,118,168,.10);
+    }
+
+    .options-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        margin-top: 10px;
+    }
+
+    .correct-answer {
+        margin-top: 18px;
+        padding: 16px;
+        border-radius: 16px;
+        background: #f3f4ee;
+    }
+
+    .correct-answer-title {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        color: #77776f;
+        margin-bottom: 12px;
+    }
+
+    .answer-options {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .answer-option {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 9px 13px;
+        border-radius: 12px;
+        background: white;
+        border: 1px solid #deded8;
+        cursor: pointer;
+        font-size: 12px;
+    }
+
+    .answer-option:hover {
+        border-color: #8776a8;
+    }
+
+    .question-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 22px;
+    }
+
+    .primary-btn,
+    .secondary-btn,
+    .danger-btn {
+        border: none;
+        border-radius: 13px;
+        padding: 12px 19px;
+        font-family: inherit;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: .2s ease;
+    }
+
+    .primary-btn {
+        background: #292927;
+        color: white;
+    }
+
+    .primary-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 18px rgba(0,0,0,.12);
+    }
+
+    .secondary-btn {
+        background: #e8e8e2;
+        color: #292927;
+    }
+
+    .danger-btn {
+        background: #f2c9d7;
+        color: #5b303d;
+        padding: 8px 12px;
+    }
+
+    .questions-empty {
+        padding: 30px;
+        text-align: center;
+        border: 1px dashed #d8d8d0;
+        border-radius: 18px;
+        color: #999990;
+        font-size: 12px;
+    }
+
+    .question-item {
+        background: #f8f8f4;
+        border-radius: 18px;
+        padding: 20px;
+        margin-bottom: 14px;
+    }
+
+    .question-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 15px;
+    }
+
+    .question-number {
+        font-size: 9px;
+        letter-spacing: .12em;
+        color: #8776a8;
+        font-weight: 700;
+        margin-bottom: 7px;
+    }
+
+    .question-text {
+        font-size: 14px;
+        font-weight: 600;
+        color: #292927;
+    }
+
+    .question-options {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 15px;
+    }
+
+    .question-option {
+        padding: 10px 12px;
+        background: white;
+        border-radius: 10px;
+        font-size: 11px;
+        color: #66665f;
+    }
+
+    .question-option.correct {
+        background: #d9eee8;
+        color: #315c4b;
+        font-weight: 700;
+    }
+
+    .exam-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 15px;
+        margin-top: 25px;
+    }
+
+    .question-count {
+        font-size: 11px;
+        color: #77776f;
+    }
+
+    @media(max-width: 750px) {
+        .form-grid,
+        .options-grid,
+        .question-options {
+            grid-template-columns: 1fr;
+        }
+
+        .form-group.full {
+            grid-column: auto;
+        }
+
+        .host-card {
+            padding: 20px;
+        }
+    }
+</style>
+```
+
+</head>
+
+<body>
+
+<div class="background-art">
+    <div class="blob blob-one"></div>
+    <div class="blob blob-two"></div>
+    <div class="blob blob-three"></div>
+</div>
+
+<div class="host-page">
+
+```
+<!-- =====================================================
+     TOPBAR
+     ===================================================== -->
+
+<div class="topbar">
+
+    <div>
+        <div class="eyebrow">EXAM MANAGEMENT</div>
+
+        <h1>Host New Exam</h1>
+
+        <div class="subtitle">
+            Create an examination and add multiple-choice questions.
+        </div>
+    </div>
+
+    <div class="top-right">
+
+        <div class="live-pill">
+            <span class="live-dot"></span>
+            PROCTIFY
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     EXAM DETAILS
+     ===================================================== -->
+
+<div class="host-card">
+
+    <h2>Exam Details</h2>
+
+    <div class="form-grid">
+
+        <div class="form-group">
+
+            <label for="examTitle">
+                Exam Name
+            </label>
+
+            <input
+                type="text"
+                id="examTitle"
+                placeholder="Enter exam name"
+            >
+
+        </div>
+
+
+        <div class="form-group">
+
+            <label for="subject">
+                Subject
+            </label>
+
+            <input
+                type="text"
+                id="subject"
+                placeholder="Enter subject"
+            >
+
+        </div>
+
+
+        <div class="form-group">
+
+            <label for="duration">
+                Duration
+            </label>
+
+            <input
+                type="number"
+                id="duration"
+                min="1"
+                placeholder="Duration in minutes"
+            >
+
+        </div>
+        <div class="form-group">
+            <label for="scheduledStart">
+                Scheduled Start
+            </label>
+
+            <input
+                type="datetime-local"
+                id="scheduledStart"
+            >
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     ADD QUESTION
+     ===================================================== -->
+
+<div class="host-card">
+
+    <h2>Add MCQ Question</h2>
+
+    <div class="form-group">
+
+        <label for="questionText">
+            Question
+        </label>
+
+        <textarea
+            id="questionText"
+            placeholder="Enter the question..."
+        ></textarea>
+
+    </div>
+
+
+    <div class="options-grid">
+
+        <div class="form-group">
+
+            <label for="optionA">
+                Option A
+            </label>
+
+            <input
+                type="text"
+                id="optionA"
+                placeholder="Enter option A"
+            >
+
+        </div>
+
+
+        <div class="form-group">
+
+            <label for="optionB">
+                Option B
+            </label>
+
+            <input
+                type="text"
+                id="optionB"
+                placeholder="Enter option B"
+            >
+
+        </div>
+
+
+        <div class="form-group">
+
+            <label for="optionC">
+                Option C
+            </label>
+
+            <input
+                type="text"
+                id="optionC"
+                placeholder="Enter option C"
+            >
+
+        </div>
+
+
+        <div class="form-group">
+
+            <label for="optionD">
+                Option D
+            </label>
+
+            <input
+                type="text"
+                id="optionD"
+                placeholder="Enter option D"
+            >
+
+        </div>
+
+    </div>
+
+
+    <!-- CORRECT ANSWER -->
+
+    <div class="correct-answer">
+
+        <div class="correct-answer-title">
+            Select Correct Answer
+        </div>
+
+        <div class="answer-options">
+
+            <label class="answer-option">
+                <input
+                    type="radio"
+                    name="correctAnswer"
+                    value="A"
+                >
+                Option A
+            </label>
+
+            <label class="answer-option">
+                <input
+                    type="radio"
+                    name="correctAnswer"
+                    value="B"
+                >
+                Option B
+            </label>
+
+            <label class="answer-option">
+                <input
+                    type="radio"
+                    name="correctAnswer"
+                    value="C"
+                >
+                Option C
+            </label>
+
+            <label class="answer-option">
+                <input
+                    type="radio"
+                    name="correctAnswer"
+                    value="D"
+                >
+                Option D
+            </label>
+
+        </div>
+
+    </div>
+
+
+    <div class="question-actions">
+
+        <button
+            type="button"
+            class="primary-btn"
+            onclick="addQuestion()"
+        >
+            + Add Question
+        </button>
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     QUESTIONS
+     ===================================================== -->
+
+<div class="host-card">
+
+    <h2>Exam Questions</h2>
+
+    <div id="questionsContainer">
+
+        <div
+            class="questions-empty"
+            id="emptyMessage"
+        >
+            No questions added yet.
+        </div>
+
+    </div>
+
+
+    <div class="exam-actions">
+
+        <div
+            class="question-count"
+            id="questionCount"
+        >
+            0 questions
+        </div>
+
+        <button
+            type="button"
+            class="primary-btn"
+            onclick="startExam()"
+        >
+            Start Exam
+        </button>
+
+    </div>
+
+</div>
+```
+
+</div>
+
+<script>
+
+let questions = [];
+
+
+function addQuestion() {
+
+    const question =
+        document.getElementById(
+            "questionText"
+        ).value.trim();
+
+    const optionA =
+        document.getElementById(
+            "optionA"
+        ).value.trim();
+
+    const optionB =
+        document.getElementById(
+            "optionB"
+        ).value.trim();
+
+    const optionC =
+        document.getElementById(
+            "optionC"
+        ).value.trim();
+
+    const optionD =
+        document.getElementById(
+            "optionD"
+        ).value.trim();
+
+
+    const correctElement =
+        document.querySelector(
+            'input[name="correctAnswer"]:checked'
+        );
+
+
+    if (
+        !question ||
+        !optionA ||
+        !optionB ||
+        !optionC ||
+        !optionD ||
+        !correctElement
+    ) {
+
+        alert(
+            "Please fill the question, all four options, and select the correct answer."
+        );
+
+        return;
+    }
+
+
+    const newQuestion = {
+
+        question:
+            question,
+
+        options: {
+
+            A:
+                optionA,
+
+            B:
+                optionB,
+
+            C:
+                optionC,
+
+            D:
+                optionD
+
+        },
+
+        correct_answer:
+            correctElement.value
+
+    };
+
+
+    questions.push(
+        newQuestion
+    );
+
+
+    renderQuestions();
+
+
+    document.getElementById(
+        "questionText"
+    ).value = "";
+
+    document.getElementById(
+        "optionA"
+    ).value = "";
+
+    document.getElementById(
+        "optionB"
+    ).value = "";
+
+    document.getElementById(
+        "optionC"
+    ).value = "";
+
+    document.getElementById(
+        "optionD"
+    ).value = "";
+
+
+    document.querySelectorAll(
+        'input[name="correctAnswer"]'
+    ).forEach(
+        radio =>
+            radio.checked = false
+    );
+
+}
+
+
+function renderQuestions() {
+
+    const container =
+        document.getElementById(
+            "questionsContainer"
+        );
+
+    const emptyMessage =
+        document.getElementById(
+            "emptyMessage"
+        );
+
+
+    if (questions.length === 0) {
+
+        container.innerHTML = "";
+
+        container.appendChild(
+            emptyMessage
+        );
+
+        document.getElementById(
+            "questionCount"
+        ).textContent =
+            "0 questions";
+
+        return;
+    }
+
+
+    container.innerHTML = "";
+
+
+    questions.forEach(
+        (item, index) => {
+
+            const questionDiv =
+                document.createElement(
+                    "div"
+                );
+
+            questionDiv.className =
+                "question-item";
+
+
+            let optionsHTML = "";
+
+
+            ["A", "B", "C", "D"].forEach(
+                letter => {
+
+                    const correct =
+                        item.correct_answer ===
+                        letter
+                            ? " correct"
+                            : "";
+
+                    optionsHTML += `
+                        <div class="question-option${correct}">
+                            ${letter}. ${escapeHTML(item.options[letter])}
+                        </div>
+                    `;
+
+                }
+            );
+
+
+            questionDiv.innerHTML = `
+
+                <div class="question-header">
+
+                    <div>
+
+                        <div class="question-number">
+                            QUESTION ${index + 1}
+                        </div>
+
+                        <div class="question-text">
+                            ${escapeHTML(item.question)}
+                        </div>
+
+                    </div>
+
+                    <button
+                        type="button"
+                        class="danger-btn"
+                        onclick="deleteQuestion(${index})"
+                    >
+                        Delete
+                    </button>
+
+                </div>
+
+                <div class="question-options">
+                    ${optionsHTML}
+                </div>
+            `;
+
+
+            container.appendChild(
+                questionDiv
+            );
+
+        }
+    );
+
+
+    document.getElementById(
+        "questionCount"
+    ).textContent =
+        `${questions.length} question${questions.length === 1 ? "" : "s"}`;
+
+}
+
+
+function deleteQuestion(index) {
+
+    questions.splice(
+        index,
+        1
+    );
+
+    renderQuestions();
+
+}
+
+
+function escapeHTML(value) {
+
+    return value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+
+}
+
+
+async function startExam() {
+
+    const title =
+        document.getElementById(
+            "examTitle"
+        ).value.trim();
+
+    const subject =
+        document.getElementById(
+            "subject"
+        ).value.trim();
+
+    const duration =
+        document.getElementById(
+            "duration"
+        ).value;
+    const scheduledStart =
+        document.getElementById(
+            "scheduledStart"
+        ).value;
+
+
+    // --------------------------------------------------------
+    // VALIDATION
+    // --------------------------------------------------------
+
+    if (!title ||
+        !subject ||
+        !duration ||
+        !scheduledStart) {
+
+        alert(
+            "Please enter the exam name, subject, duration, and scheduled start time."
+        );
+
+        return;
+    }
+
+
+    if (questions.length === 0) {
+
+        alert(
+            "Please add at least one question."
+        );
+
+        return;
+    }
+
+
+    // --------------------------------------------------------
+    // EXAM DATA
+    // --------------------------------------------------------
+
+    const examData = {
+
+        exam_name:
+            title,
+
+        subject:
+            subject,
+
+        duration:
+            Number(duration),
+
+        scheduled_start:
+            scheduledStart,
+
+        questions:
+            questions
+
+    };
+
+
+    // --------------------------------------------------------
+    // SEND TO FLASK
+    // --------------------------------------------------------
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/exams",
+                {
+
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify(
+                            examData
+                        )
+
+                }
+            );
+
+
+        const result =
+            await response.json();
+
+
+        // ----------------------------------------------------
+        // SUCCESS
+        // ----------------------------------------------------
+
+        if (result.success) {
+
+            alert(
+                "Exam created successfully!\n\nExam ID: " +
+                result.exam.exam_id
+            );
+
+            console.log(
+                "PROCTIFY EXAM:",
+                result.exam
+            );
+
+        }
+
+
+        // ----------------------------------------------------
+        // ERROR
+        // ----------------------------------------------------
+
+        else {
+
+            alert(
+                "Failed to create exam:\n" +
+                result.error
+            );
+
+        }
+
+
+    } catch (error) {
+
+        console.error(
+            "Exam creation error:",
+            error
+        );
+
+        alert(
+            "Could not connect to the PROCTIFY server."
+        );
+
+    }
+
+}
+
+
+</script>
+
+</body>
+</html>
