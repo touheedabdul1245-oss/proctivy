@@ -9,6 +9,7 @@ import sounddevice as sd
 import mediapipe as mp
 import json
 import sys
+import re
 from ultralytics import YOLO
 from monitoring.monitoring_engine import MonitoringEngine
 
@@ -218,7 +219,7 @@ def update_live_status(
         status == "ONLINE"
     )
 
-    ai_available = bool(
+    ai_ready = bool(
         AI_AVAILABLE
         and
         status == "ONLINE"
@@ -281,7 +282,7 @@ def update_live_status(
                 audio_ready,
 
             ai_available=
-                ai_available,
+                ai_ready,
 
             tab_available=
                 tab_available,
@@ -308,6 +309,7 @@ def update_live_status(
         )
 
         print()
+
 
 # ============================================================
 # MARK STUDENT OFFLINE
@@ -1309,13 +1311,21 @@ def start_video_server():
     # --------------------------------------------------------
 
     try:
+        student_match = re.search(
+            r"(\d+)$",
+            str(STUDENT_ID)
+        )
+
+        if student_match is None:
+            raise ValueError(
+                "Student ID has no trailing number."
+            )
 
         student_number = int(
-            STUDENT_ID.split("_")[-1]
+            student_match.group(1)
         )
 
     except (ValueError, IndexError):
-
         student_number = 1
 
 
@@ -1355,7 +1365,7 @@ print(
 )
 
 print(
-    "http://127.0.0.1:5001/video_feed"
+    "Student-specific video port is assigned automatically."
 )
 # ============================================================
 # VIOLATION COOLDOWNS
@@ -2050,11 +2060,11 @@ try:
 
             gaze in [
 
-                "LOOKING LEFT",
+                "LOOKING_LEFT",
 
-                "LOOKING RIGHT",
+                "LOOKING_RIGHT",
 
-                "LOOKING DOWN"
+                "LOOKING_DOWN"
 
             ]
 
@@ -2072,22 +2082,22 @@ try:
 
             ):
 
-                if gaze == "LOOKING LEFT":
+                if gaze == "LOOKING_LEFT":
 
                     violation_type = (
-                        "LOOKING LEFT"
+                        "LOOKING_LEFT"
                     )
 
-                elif gaze == "LOOKING RIGHT":
+                elif gaze == "LOOKING_RIGHT":
 
                     violation_type = (
-                        "LOOKING RIGHT"
+                        "LOOKING_RIGHT"
                     )
 
                 else:
 
                     violation_type = (
-                        "LOOKING DOWN"
+                        "LOOKING_DOWN"
                     )
 
 

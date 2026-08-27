@@ -352,17 +352,17 @@
         <div class="student-profile">
 
             <div class="student-avatar-large">
-                S
+                {{ (student_name or student_id or "S")[0]|upper }}
             </div>
 
             <div>
 
                 <div class="student-profile-name">
-                    Student 01
+                    {{ student_name or "Student" }}
                 </div>
 
                 <div class="student-profile-id">
-                    STUDENT_001
+                    {{ student_id or "STUDENT" }}
                 </div>
 
             </div>
@@ -493,7 +493,7 @@ async function loadStudentExams() {
 
         const response =
             await fetch(
-                "/api/exams",
+                "/api/student/exams",
                 {
                     cache: "no-store"
                 }
@@ -542,10 +542,8 @@ async function loadStudentExams() {
                             exam.status || ""
                         ).toUpperCase();
 
-                    return (
-                        status === "ACTIVE" ||
-                        status === "SCHEDULED"
-                    );
+                    return status === "ACTIVE";
+
                 }
             );
 
@@ -922,9 +920,10 @@ setInterval(
  *
  * is reflected automatically on the student dashboard.
  *
- * Expired exams are excluded by /api/exams and therefore
- * disappear from this page after the next refresh.
- */
+* The backend returns only exams assigned to the
+* logged-in student that are currently ACTIVE.
+*
+* Expired exams automatically disappear from this page.
 setInterval(
     loadStudentExams,
     10000

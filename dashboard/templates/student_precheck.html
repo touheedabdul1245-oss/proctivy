@@ -607,19 +607,7 @@ const EXAM_ID =
 ========================================================= */
 
 const STUDENT_ID =
-    sessionStorage.getItem(
-        "student_id"
-    );
-
-
-if (
-    !STUDENT_ID
-) {
-
-    window.location.href =
-        "/login";
-
-}
+    "{{ student_id }}";
 
 
 let cameraReady = false;
@@ -677,15 +665,12 @@ function setStatus(
 async function getStudentMonitoringData() {
 
     const response =
-        await fetch(
-            "/api/student/" +
-            encodeURIComponent(
-                STUDENT_ID
-            ),
-            {
-                cache: "no-store"
-            }
-        );
+            await fetch(
+                "/api/student/live/current",
+                {
+                    cache: "no-store"
+                }
+            );
 
 
     if (!response.ok) {

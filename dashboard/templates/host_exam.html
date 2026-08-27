@@ -365,6 +365,38 @@
     </div>
 
 </div>
+<!-- =====================================================
+     ASSIGN STUDENTS
+===================================================== -->
+
+<div class="form-group">
+
+    <label>
+        Assign Students
+    </label>
+
+    <p style="
+        font-size: 13px;
+        color: #64748b;
+        margin: 5px 0 12px 0;
+    ">
+        Select the students who can take this exam.
+    </p>
+
+    <div
+        id="studentSelection"
+        style="
+            display: grid;
+            gap: 10px;
+            max-height: 250px;
+            overflow-y: auto;
+            padding: 5px;
+        "
+    >
+        Loading enrolled students...
+    </div>
+
+</div>
 
 
 <!-- =====================================================
@@ -559,7 +591,7 @@
     </div>
 
 </div>
-```
+
 
 </div>
 
@@ -877,22 +909,40 @@ async function startExam() {
     // EXAM DATA
     // --------------------------------------------------------
 
+    const selectedStudents =
+        getSelectedStudents();
+
+
+    if (selectedStudents.length === 0) {
+
+        alert(
+            "Please select at least one student."
+        );
+
+        return;
+
+    }
+
+
     const examData = {
 
         exam_name:
-            title,
+            examName,
 
         subject:
             subject,
 
         duration:
-            Number(duration),
+            duration,
 
         scheduled_start:
             scheduledStart,
 
         questions:
-            questions
+            questions,
+
+        selected_students:
+            selectedStudents
 
     };
 
@@ -975,6 +1025,144 @@ async function startExam() {
     }
 
 }
+/* =====================================================
+   LOAD ENROLLED STUDENTS
+===================================================== */
+
+async function loadStudents() {
+
+    const container =
+        document.getElementById(
+            "studentSelection"
+        );
+
+    if (!container) return;
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/students"
+            );
+
+        const data =
+            await response.json();
+
+        if (
+            !response.ok ||
+            !data.success
+        ) {
+
+            throw new Error(
+                data.error ||
+                "Unable to load students"
+            );
+
+        }
+
+        const students =
+            data.students || [];
+
+        container.innerHTML = "";
+
+        if (students.length === 0) {
+
+            container.innerHTML =
+                "No enrolled students found.";
+
+            return;
+
+        }
+
+        students.forEach(function(student) {
+
+            const item =
+                document.createElement("label");
+
+            item.style.display = "flex";
+            item.style.alignItems = "center";
+            item.style.gap = "10px";
+            item.style.padding = "12px";
+            item.style.border =
+                "1px solid #e2e8f0";
+            item.style.borderRadius = "10px";
+            item.style.cursor = "pointer";
+
+            item.innerHTML = `
+
+                <input
+                    type="checkbox"
+                    class="student-checkbox"
+                    value="${student.student_id}"
+                >
+
+                <div>
+
+                    <strong>
+                        ${student.student_name || student.student_id}
+                    </strong>
+
+                    <div style="
+                        font-size: 12px;
+                        color: #64748b;
+                    ">
+
+                        ${student.student_id}
+
+                    </div>
+
+                </div>
+
+            `;
+
+            container.appendChild(item);
+
+        });
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Student loading error:",
+            error
+        );
+
+        container.innerHTML =
+            "Unable to load enrolled students.";
+
+    }
+
+}
+
+
+function getSelectedStudents() {
+
+    const selected = [];
+
+    document
+        .querySelectorAll(
+            ".student-checkbox:checked"
+        )
+        .forEach(function(checkbox) {
+
+            selected.push(
+                checkbox.value
+            );
+
+        });
+
+    return selected;
+
+}
+
+
+/* LOAD STUDENTS */
+
+document.addEventListener(
+    "DOMContentLoaded",
+    loadStudents
+);
 
 
 </script>
