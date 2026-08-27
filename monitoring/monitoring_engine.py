@@ -1,17 +1,26 @@
 import cv2
 import uuid
-import sqlite3
 import os
 import json
+import mysql.connector
+
 from datetime import datetime
 
 
 # ============================================================
 # PROCTIFY - MONITORING ENGINE
+# MYSQL VERSION
+# ============================================================
+
+
+# ============================================================
+# BASE DIRECTORY
 # ============================================================
 
 BASE_DIR = os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
+    os.path.dirname(
+        os.path.abspath(__file__)
+    )
 )
 
 
@@ -19,15 +28,11 @@ BASE_DIR = os.path.dirname(
 # DIRECTORIES
 # ============================================================
 
-DATABASE_DIR = os.path.join(
-    BASE_DIR,
-    "database"
-)
-
 REPORTS_DIR = os.path.join(
     BASE_DIR,
     "reports"
 )
+
 
 EVIDENCE_DIR = os.path.join(
     REPORTS_DIR,
@@ -36,14 +41,10 @@ EVIDENCE_DIR = os.path.join(
 
 
 os.makedirs(
-    DATABASE_DIR,
-    exist_ok=True
-)
-
-os.makedirs(
     REPORTS_DIR,
     exist_ok=True
 )
+
 
 os.makedirs(
     EVIDENCE_DIR,
@@ -52,13 +53,20 @@ os.makedirs(
 
 
 # ============================================================
-# DATABASE
+# MYSQL CONFIGURATION
 # ============================================================
 
-DATABASE_PATH = os.path.join(
-    DATABASE_DIR,
-    "proctify.db"
-)
+DB_CONFIG = {
+
+    "host": "localhost",
+
+    "user": "root",
+
+    "password": "aasmaan@14",
+
+    "database": "proctify_db"
+
+}
 
 
 # ============================================================
@@ -66,16 +74,72 @@ DATABASE_PATH = os.path.join(
 # ============================================================
 
 PENALTIES = {
+
     "PHONE_DETECTED": 10,
+
     "MULTIPLE_PERSON": 10,
+
     "LOOKING_LEFT": 5,
+
     "LOOKING_RIGHT": 5,
+
     "LOOKING_DOWN": 5,
+
     "EYES_CLOSED": 5,
+
     "NO_FACE": 10,
+
     "AUDIO_VIOLATION": 10,
+
     "TAB_SWITCH": 10
+
 }
+
+
+# ============================================================
+# DATABASE CONNECTION
+# ============================================================
+
+def get_database_connection():
+
+    try:
+
+        connection = mysql.connector.connect(
+
+            **DB_CONFIG
+
+        )
+
+        return connection
+
+
+    except mysql.connector.Error as error:
+
+        print()
+
+        print(
+            "========================================"
+        )
+
+        print(
+            "MYSQL CONNECTION ERROR"
+        )
+
+        print(
+            "========================================"
+        )
+
+        print(
+            error
+        )
+
+        print(
+            "========================================"
+        )
+
+        print()
+
+        return None
 
 
 # ============================================================
@@ -84,9 +148,31 @@ PENALTIES = {
 
 class MonitoringEngine:
 
-    def __init__(self, session_id):
 
-        self.session_id = session_id
+    # ========================================================
+    # INITIALIZE
+    # ========================================================
+
+    def __init__(
+        self,
+        session_id,
+        student_id="UNKNOWN",
+        exam_name="PROCTIFY EXAM"
+    ):
+
+        self.session_id = str(
+            session_id
+        )
+
+        # Session identity used for MySQL-based completed reports.
+        self.student_id = str(
+            student_id
+        )
+
+        self.exam_name = str(
+            exam_name
+        )
+
 
         self.trust_score = 100
 
@@ -97,86 +183,37 @@ class MonitoringEngine:
         self.violation_count = 0
 
 
-        # ----------------------------------------------------
-        # Make sure database tables exist
-        # ----------------------------------------------------
+        print()
 
-        self.initialize_database()
-
-
-    # ========================================================
-    # INITIALIZE DATABASE
-    # ========================================================
-
-    def initialize_database(self):
-
-        connection = sqlite3.connect(
-            DATABASE_PATH
+        print(
+            "========================================"
         )
 
-        cursor = connection.cursor()
-
-
-        # ----------------------------------------------------
-        # Violations table
-        # ----------------------------------------------------
-
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS violations
-            (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT,
-                violation_type TEXT,
-                severity TEXT,
-                penalty INTEGER,
-                description TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-            """
+        print(
+            "PROCTIFY MONITORING ENGINE"
         )
 
-
-        # ----------------------------------------------------
-        # Trust score history
-        # ----------------------------------------------------
-
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS trust_score_history
-            (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT,
-                old_score REAL,
-                new_score REAL,
-                reason TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-            """
+        print(
+            "========================================"
         )
 
-
-        # ----------------------------------------------------
-        # Evidence table
-        # ----------------------------------------------------
-
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS evidence
-            (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                violation_id INTEGER,
-                session_id TEXT,
-                file_path TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-            """
+        print(
+            f"Session ID: {self.session_id}"
         )
 
+        print(
+            "Initial Trust Score: 100"
+        )
 
-        connection.commit()
+        print(
+            "Monitoring Engine Ready"
+        )
 
-        connection.close()
+        print(
+            "========================================"
+        )
+
+        print()
 
 
     # ========================================================
@@ -184,123 +221,288 @@ class MonitoringEngine:
     # ========================================================
 
     def record_violation(
+
         self,
+
         violation_type,
+
         severity="MEDIUM",
+
         description=""
+
     ):
 
+
         # ----------------------------------------------------
-        # Get penalty
+        # PENALTY
         # ----------------------------------------------------
 
         penalty = PENALTIES.get(
+
             violation_type,
+
             0
+
         )
 
 
         # ----------------------------------------------------
-        # Old score
+        # OLD SCORE
         # ----------------------------------------------------
 
         old_score = self.trust_score
 
 
         # ----------------------------------------------------
-        # Apply penalty
+        # APPLY PENALTY
         # ----------------------------------------------------
 
         self.cheating_score += penalty
 
+
         self.trust_score = max(
+
             0,
+
             100 - self.cheating_score
+
         )
 
 
         self.violation_count += 1
 
 
-        # ----------------------------------------------------
-        # Database connection
-        # ----------------------------------------------------
-
-        connection = sqlite3.connect(
-            DATABASE_PATH
-        )
-
-        cursor = connection.cursor()
+        connection = get_database_connection()
 
 
-        # ----------------------------------------------------
-        # Store violation
-        # ----------------------------------------------------
+        if connection is None:
 
-        cursor.execute(
+            print(
+                "Violation could not be stored in MySQL."
+            )
+
+            return None
+
+
+        cursor = None
+
+
+        try:
+
+            cursor = connection.cursor()
+
+
+            # ------------------------------------------------
+            # INSERT VIOLATION
+            # ------------------------------------------------
+
+            query = """
+
+                INSERT INTO violations
+
+                (
+
+                    session_id,
+
+                    violation_type,
+
+                    severity,
+
+                    penalty,
+
+                    description
+
+                )
+
+                VALUES
+
+                (
+
+                    %s,
+
+                    %s,
+
+                    %s,
+
+                    %s,
+
+                    %s
+
+                )
+
             """
-            INSERT INTO violations
-            (
-                session_id,
-                violation_type,
-                severity,
-                penalty,
-                description
-            )
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (
+
+
+            values = (
+
                 self.session_id,
+
                 violation_type,
+
                 severity,
+
                 penalty,
+
                 description
+
             )
-        )
 
 
-        # ----------------------------------------------------
-        # Store score history
-        # ----------------------------------------------------
+            cursor.execute(
 
-        cursor.execute(
+                query,
+
+                values
+
+            )
+
+
+            violation_id = cursor.lastrowid
+
+
+            # ------------------------------------------------
+            # TRUST SCORE HISTORY
+            # ------------------------------------------------
+
+            score_query = """
+
+                INSERT INTO trust_score_history
+
+                (
+
+                    session_id,
+
+                    old_score,
+
+                    new_score,
+
+                    reason
+
+                )
+
+                VALUES
+
+                (
+
+                    %s,
+
+                    %s,
+
+                    %s,
+
+                    %s
+
+                )
+
             """
-            INSERT INTO trust_score_history
-            (
-                session_id,
-                old_score,
-                new_score,
-                reason
-            )
-            VALUES (?, ?, ?, ?)
-            """,
-            (
+
+
+            score_values = (
+
                 self.session_id,
+
                 old_score,
+
                 self.trust_score,
+
                 violation_type
+
             )
-        )
 
 
-        connection.commit()
+            cursor.execute(
 
-        connection.close()
+                score_query,
+
+                score_values
+
+            )
 
 
-        # ----------------------------------------------------
-        # Console output
-        # ----------------------------------------------------
+            connection.commit()
 
-        print()
-        print("========================================")
-        print("PROCTIFY VIOLATION")
-        print("========================================")
-        print(f"Type       : {violation_type}")
-        print(f"Penalty    : -{penalty}")
-        print(f"Trust Score: {self.trust_score}")
-        print(f"Time       : {datetime.now()}")
-        print("========================================")
+
+            # ------------------------------------------------
+            # CONSOLE OUTPUT
+            # ------------------------------------------------
+
+            print()
+
+            print(
+                "========================================"
+            )
+
+            print(
+                "PROCTIFY VIOLATION"
+            )
+
+            print(
+                "========================================"
+            )
+
+            print(
+                f"Type       : {violation_type}"
+            )
+
+            print(
+                f"Severity   : {severity}"
+            )
+
+            print(
+                f"Penalty    : -{penalty}"
+            )
+
+            print(
+                f"Trust Score: {self.trust_score}"
+            )
+
+            print(
+                f"Time       : {datetime.now()}"
+            )
+
+            print(
+                "Stored in MySQL: YES"
+            )
+
+            print(
+                "========================================"
+            )
+
+            print()
+
+
+            return violation_id
+
+
+        except mysql.connector.Error as error:
+
+            print()
+
+            print(
+                "MYSQL VIOLATION ERROR:"
+            )
+
+            print(
+                error
+            )
+
+            print()
+
+
+            connection.rollback()
+
+
+            return None
+
+
+        finally:
+
+            if cursor is not None:
+
+                cursor.close()
+
+
+            connection.close()
 
 
     # ========================================================
@@ -308,146 +510,576 @@ class MonitoringEngine:
     # ========================================================
 
     def save_evidence(
+
         self,
+
         frame,
+
         violation_type
+
     ):
 
-        evidence_dir = EVIDENCE_DIR
+
+        # ----------------------------------------------------
+        # ENSURE EVIDENCE DIRECTORY EXISTS
+        # ----------------------------------------------------
 
         os.makedirs(
-            evidence_dir,
+
+            EVIDENCE_DIR,
+
             exist_ok=True
+
         )
 
 
         # ----------------------------------------------------
-        # Create unique filename
+        # CREATE FILENAME
         # ----------------------------------------------------
 
         timestamp = datetime.now().strftime(
+
             "%Y%m%d_%H%M%S"
+
         )
+
 
         unique_id = uuid.uuid4().hex[:8]
 
+
         filename = (
+
             f"{violation_type}_"
+
             f"{timestamp}_"
+
             f"{unique_id}.jpg"
+
         )
 
 
         file_path = os.path.join(
-            evidence_dir,
+
+            EVIDENCE_DIR,
+
             filename
+
         )
 
 
         # ----------------------------------------------------
-        # Save webcam frame
+        # SAVE IMAGE
         # ----------------------------------------------------
 
         success = cv2.imwrite(
+
             file_path,
+
             frame
+
         )
 
 
         if not success:
 
             print(
+
                 "ERROR: Could not save evidence image."
+
             )
 
             return None
 
 
         # ----------------------------------------------------
-        # Store evidence information in SQL
+        # CONNECT MYSQL
         # ----------------------------------------------------
 
-        connection = sqlite3.connect(
-            DATABASE_PATH
-        )
-
-        cursor = connection.cursor()
+        connection = get_database_connection()
 
 
-        # ----------------------------------------------------
-        # Find most recent violation
-        # ----------------------------------------------------
+        if connection is None:
 
-        cursor.execute(
+            return file_path
+
+
+        cursor = None
+
+
+        try:
+
+            cursor = connection.cursor()
+
+
+            # ------------------------------------------------
+            # FIND LATEST VIOLATION
+            # ------------------------------------------------
+
+            query = """
+
+                SELECT id
+
+                FROM violations
+
+                WHERE session_id = %s
+
+                ORDER BY id DESC
+
+                LIMIT 1
+
             """
-            SELECT id
-            FROM violations
-            WHERE session_id = ?
-            ORDER BY id DESC
-            LIMIT 1
-            """,
-            (
-                self.session_id,
+
+
+            cursor.execute(
+
+                query,
+
+                (
+
+                    self.session_id,
+
+                )
+
             )
-        )
 
 
-        result = cursor.fetchone()
+            result = cursor.fetchone()
 
 
-        violation_id = (
-            result[0]
-            if result
-            else None
-        )
+            if result:
+
+                violation_id = result[0]
+
+            else:
+
+                violation_id = None
 
 
-        # ----------------------------------------------------
-        # Store evidence
-        # ----------------------------------------------------
+            # ------------------------------------------------
+            # INSERT EVIDENCE
+            # ------------------------------------------------
 
-        cursor.execute(
+            evidence_query = """
+
+                INSERT INTO evidence
+
+                (
+
+                    violation_id,
+
+                    session_id,
+
+                    file_path
+
+                )
+
+                VALUES
+
+                (
+
+                    %s,
+
+                    %s,
+
+                    %s
+
+                )
+
             """
-            INSERT INTO evidence
-            (
+
+
+            evidence_values = (
+
                 violation_id,
-                session_id,
-                file_path
-            )
-            VALUES (?, ?, ?)
-            """,
-            (
-                violation_id,
+
                 self.session_id,
+
                 file_path
+
             )
-        )
 
 
-        connection.commit()
+            cursor.execute(
 
-        connection.close()
+                evidence_query,
+
+                evidence_values
+
+            )
+
+
+            connection.commit()
+
+
+            print()
+
+            print(
+
+                "Evidence saved:"
+
+            )
+
+            print(
+
+                file_path
+
+            )
+
+            print(
+
+                "Evidence stored in MySQL."
+
+            )
+
+            print()
+
+
+            return file_path
+
+
+        except mysql.connector.Error as error:
+
+            print(
+
+                "MYSQL EVIDENCE ERROR:",
+
+                error
+
+            )
+
+
+            connection.rollback()
+
+
+            return file_path
+
+
+        finally:
+
+            if cursor is not None:
+
+                cursor.close()
+
+
+            connection.close()
+
+     # ========================================================
+    # UPDATE LIVE STUDENT IN MYSQL
+    # ========================================================
+
+    # ========================================================
+    # UPDATE LIVE STUDENT IN MYSQL
+    # ========================================================
+
+    def update_live_student(
+
+        self,
+
+        student_id,
+        exam_name,
+        status,
+        phone,
+        phone_count,
+        person_count,
+        face_count,
+        hand_count,
+        gaze,
+        head_direction,
+        audio,
+        audio_volume,
+
+        camera_available=False,
+        audio_available=False,
+        ai_available=False,
+        tab_available=True,
+
+        trust_score=None,
+        risk_level=None
+
+    ):
 
 
         # ----------------------------------------------------
-        # Console output
+        # USE CURRENT ENGINE VALUES IF NOT PROVIDED
         # ----------------------------------------------------
 
-        print()
-        print("Evidence saved:")
-        print(file_path)
+        if trust_score is None:
+
+            trust_score = self.trust_score
 
 
-        return file_path
+        if risk_level is None:
+
+            risk_level = self.get_risk_level()
 
 
+        # ----------------------------------------------------
+        # CONNECT TO MYSQL
+        # ----------------------------------------------------
+
+        connection = get_database_connection()
+
+
+        if connection is None:
+
+            print(
+                "Live student update failed: "
+                "MySQL connection unavailable."
+            )
+
+            return False
+
+
+        cursor = None
+
+
+        try:
+
+            cursor = connection.cursor()
+
+
+            # ------------------------------------------------
+            # INSERT OR UPDATE LIVE STUDENT
+            # ------------------------------------------------
+
+            query = """
+
+                INSERT INTO live_students
+
+                (
+
+                    student_id,
+                    session_id,
+                    exam_name,
+                    status,
+
+                    trust_score,
+                    risk_level,
+
+                    phone,
+                    phone_count,
+                    person_count,
+                    face_count,
+                    hand_count,
+
+                    gaze,
+                    head_direction,
+
+                    audio,
+                    audio_volume,
+
+                    camera_available,
+                    audio_available,
+                    ai_available,
+                    tab_available
+
+                )
+
+                VALUES
+
+                (
+
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+
+                    %s,
+                    %s,
+
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+
+                    %s,
+                    %s,
+
+                    %s,
+                    %s,
+
+                    %s,
+                    %s,
+                    %s,
+                    %s
+
+                )
+
+                ON DUPLICATE KEY UPDATE
+
+                    session_id =
+                        VALUES(session_id),
+
+                    exam_name =
+                        VALUES(exam_name),
+
+                    status =
+                        VALUES(status),
+
+                    trust_score =
+                        VALUES(trust_score),
+
+                    risk_level =
+                        VALUES(risk_level),
+
+                    phone =
+                        VALUES(phone),
+
+                    phone_count =
+                        VALUES(phone_count),
+
+                    person_count =
+                        VALUES(person_count),
+
+                    face_count =
+                        VALUES(face_count),
+
+                    hand_count =
+                        VALUES(hand_count),
+
+                    gaze =
+                        VALUES(gaze),
+
+                    head_direction =
+                        VALUES(head_direction),
+
+                    audio =
+                        VALUES(audio),
+
+                    audio_volume =
+                        VALUES(audio_volume),
+
+                    camera_available =
+                        VALUES(camera_available),
+
+                    audio_available =
+                        VALUES(audio_available),
+
+                    ai_available =
+                        VALUES(ai_available),
+
+                    tab_available =
+                        VALUES(tab_available)
+
+            """
+
+
+            values = (
+
+                str(student_id),
+
+                str(self.session_id),
+
+                str(exam_name),
+
+                str(status),
+
+
+                int(trust_score),
+
+                str(risk_level),
+
+
+                int(bool(phone)),
+
+                int(phone_count),
+
+                int(person_count),
+
+                int(face_count),
+
+                int(hand_count),
+
+
+                str(gaze),
+
+                str(head_direction),
+
+
+                str(audio),
+
+                float(audio_volume),
+
+
+                int(bool(camera_available)),
+
+                int(bool(audio_available)),
+
+                int(bool(ai_available)),
+
+                int(bool(tab_available))
+
+            )
+
+
+            cursor.execute(
+
+                query,
+
+                values
+
+            )
+
+
+            connection.commit()
+
+
+            return True
+
+
+        except mysql.connector.Error as error:
+
+            print()
+
+            print(
+                "========================================"
+            )
+
+            print(
+                "MYSQL LIVE STUDENT UPDATE ERROR"
+            )
+
+            print(
+                "========================================"
+            )
+
+            print(
+                error
+            )
+
+            print(
+                "========================================"
+            )
+
+            print()
+
+
+            connection.rollback()
+
+
+            return False
+
+
+        finally:
+
+            if cursor is not None:
+
+                cursor.close()
+
+
+            connection.close()
     # ========================================================
     # GET TRUST SCORE
     # ========================================================
 
     def get_trust_score(self):
 
-        return self.trust_score
+        return int(
+
+            self.trust_score
+
+        )
 
 
     # ========================================================
@@ -460,9 +1092,11 @@ class MonitoringEngine:
 
             return "LOW"
 
+
         elif self.trust_score >= 50:
 
             return "MEDIUM"
+
 
         else:
 
@@ -475,56 +1109,117 @@ class MonitoringEngine:
 
     def get_session_violations(self):
 
-        connection = sqlite3.connect(
-            DATABASE_PATH
-        )
 
-        cursor = connection.cursor()
+        connection = get_database_connection()
 
 
-        cursor.execute(
+        if connection is None:
+
+            return []
+
+
+        cursor = None
+
+
+        try:
+
+            cursor = connection.cursor()
+
+
+            query = """
+
+                SELECT
+
+                    id,
+
+                    violation_type,
+
+                    severity,
+
+                    penalty,
+
+                    description,
+
+                    timestamp
+
+                FROM violations
+
+                WHERE session_id = %s
+
+                ORDER BY id ASC
+
             """
-            SELECT
-                id,
-                violation_type,
-                severity,
-                penalty,
-                description,
-                timestamp
-            FROM violations
-            WHERE session_id = ?
-            ORDER BY id ASC
-            """,
-            (
-                self.session_id,
-            )
-        )
 
 
-        rows = cursor.fetchall()
+            cursor.execute(
 
+                query,
 
-        connection.close()
+                (
 
+                    self.session_id,
 
-        violations = []
+                )
 
-
-        for row in rows:
-
-            violations.append(
-                {
-                    "id": row[0],
-                    "type": row[1],
-                    "severity": row[2],
-                    "penalty": row[3],
-                    "description": row[4],
-                    "timestamp": row[5]
-                }
             )
 
 
-        return violations
+            rows = cursor.fetchall()
+
+
+            violations = []
+
+
+            for row in rows:
+
+                violations.append({
+
+                    "id":
+                        row[0],
+
+                    "type":
+                        row[1],
+
+                    "severity":
+                        row[2],
+
+                    "penalty":
+                        row[3],
+
+                    "description":
+                        row[4],
+
+                    "timestamp":
+                        str(row[5])
+
+                })
+
+
+            return violations
+
+
+        except mysql.connector.Error as error:
+
+            print(
+
+                "MYSQL READ ERROR:",
+
+                error
+
+            )
+
+
+            return []
+
+
+        finally:
+
+            if cursor is not None:
+
+                cursor.close()
+
+
+            connection.close()
 
 
     # ========================================================
@@ -533,52 +1228,287 @@ class MonitoringEngine:
 
     def get_session_evidence(self):
 
-        connection = sqlite3.connect(
-            DATABASE_PATH
-        )
 
-        cursor = connection.cursor()
+        connection = get_database_connection()
 
 
-        cursor.execute(
+        if connection is None:
+
+            return []
+
+
+        cursor = None
+
+
+        try:
+
+            cursor = connection.cursor()
+
+
+            query = """
+
+                SELECT
+
+                    id,
+
+                    violation_id,
+
+                    file_path,
+
+                    timestamp
+
+                FROM evidence
+
+                WHERE session_id = %s
+
+                ORDER BY id ASC
+
             """
-            SELECT
-                id,
-                violation_id,
-                file_path,
-                timestamp
-            FROM evidence
-            WHERE session_id = ?
-            ORDER BY id ASC
-            """,
-            (
-                self.session_id,
-            )
-        )
 
 
-        rows = cursor.fetchall()
+            cursor.execute(
 
+                query,
 
-        connection.close()
+                (
 
+                    self.session_id,
 
-        evidence = []
+                )
 
-
-        for row in rows:
-
-            evidence.append(
-                {
-                    "id": row[0],
-                    "violation_id": row[1],
-                    "file_path": row[2],
-                    "timestamp": row[3]
-                }
             )
 
 
-        return evidence
+            rows = cursor.fetchall()
+
+
+            evidence = []
+
+
+            for row in rows:
+
+                evidence.append({
+
+                    "id":
+                        row[0],
+
+                    "violation_id":
+                        row[1],
+
+                    "file_path":
+                        row[2],
+
+                    "timestamp":
+                        str(row[3])
+
+                })
+
+
+            return evidence
+
+
+        except mysql.connector.Error as error:
+
+            print(
+
+                "MYSQL EVIDENCE READ ERROR:",
+
+                error
+
+            )
+
+
+            return []
+
+
+        finally:
+
+            if cursor is not None:
+
+                cursor.close()
+
+
+            connection.close()
+
+
+    # ========================================================
+    # SAVE COMPLETED EXAM SESSION TO MYSQL
+    # ========================================================
+
+    def save_completed_exam_session(
+        self,
+        end_time
+    ):
+
+        connection = get_database_connection()
+
+        if connection is None:
+
+            print(
+                "MYSQL EXAM SESSION ERROR: "
+                "Database connection unavailable."
+            )
+
+            return False
+
+
+        cursor = None
+
+
+        try:
+
+            cursor = connection.cursor()
+
+
+            query = """
+                INSERT INTO exam_sessions
+                (
+                    session_id,
+                    student_id,
+                    exam_name,
+                    start_time,
+                    end_time,
+                    status,
+                    final_trust_score,
+                    final_risk_level
+                )
+                VALUES
+                (
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    'COMPLETED',
+                    %s,
+                    %s
+                )
+                ON DUPLICATE KEY UPDATE
+
+                    student_id = VALUES(student_id),
+
+                    exam_name = VALUES(exam_name),
+
+                    start_time = VALUES(start_time),
+
+                    end_time = VALUES(end_time),
+
+                    status = 'COMPLETED',
+
+                    final_trust_score =
+                        VALUES(final_trust_score),
+
+                    final_risk_level =
+                        VALUES(final_risk_level)
+            """
+
+
+            cursor.execute(
+
+                query,
+
+                (
+
+                    self.session_id,
+
+                    self.student_id,
+
+                    self.exam_name,
+
+                    self.start_time,
+
+                    end_time,
+
+                    int(
+                        self.get_trust_score()
+                    ),
+
+                    str(
+                        self.get_risk_level()
+                    )
+
+                )
+
+            )
+
+
+            connection.commit()
+
+
+            print()
+
+            print(
+                "========================================"
+            )
+
+            print(
+                "MYSQL EXAM SESSION SAVED"
+            )
+
+            print(
+                "========================================"
+            )
+
+            print(
+                f"Student ID: {self.student_id}"
+            )
+
+            print(
+                f"Exam: {self.exam_name}"
+            )
+
+            print(
+                f"Session ID: {self.session_id}"
+            )
+
+            print(
+                f"Trust Score: "
+                f"{self.get_trust_score()}"
+            )
+
+            print(
+                f"Risk Level: "
+                f"{self.get_risk_level()}"
+            )
+
+            print(
+                "========================================"
+            )
+
+            print()
+
+
+            return True
+
+
+        except Exception as error:
+
+            print(
+                "MYSQL EXAM SESSION SAVE ERROR:",
+                error
+            )
+
+
+            try:
+
+                connection.rollback()
+
+            except Exception:
+
+                pass
+
+
+            return False
+
+
+        finally:
+
+            if cursor is not None:
+
+                cursor.close()
+
+
+            connection.close()
 
 
     # ========================================================
@@ -587,136 +1517,257 @@ class MonitoringEngine:
 
     def generate_report(self):
 
+
         end_time = datetime.now()
 
 
         # ----------------------------------------------------
-        # Get database information
+        # MYSQL IS THE PRIMARY COMPLETED REPORT SOURCE
         # ----------------------------------------------------
 
-        violations = self.get_session_violations()
-
-        evidence = self.get_session_evidence()
+        self.save_completed_exam_session(
+            end_time
+        )
 
 
         # ----------------------------------------------------
-        # Create report filename
+        # GET DATA FROM MYSQL
+        # ----------------------------------------------------
+
+        violations = (
+
+            self.get_session_violations()
+
+        )
+
+
+        evidence = (
+
+            self.get_session_evidence()
+
+        )
+
+
+        # ----------------------------------------------------
+        # REPORT FILENAME
         # ----------------------------------------------------
 
         safe_session_id = (
-            str(self.session_id)
-            .replace(
+
+            str(
+
+                self.session_id
+
+            ).replace(
+
                 " ",
+
                 "_"
+
             )
+
         )
 
 
         report_filename = (
+
             f"session_report_"
+
             f"{safe_session_id}.json"
+
         )
 
 
         report_path = os.path.join(
+
             REPORTS_DIR,
+
             report_filename
+
         )
 
 
         # ----------------------------------------------------
-        # Create report data
+        # REPORT DATA
         # ----------------------------------------------------
 
         report_data = {
 
+
             "system":
+
                 "PROCTIFY",
 
+
             "session_id":
+
                 self.session_id,
 
+
             "start_time":
+
                 self.start_time.strftime(
+
                     "%Y-%m-%d %H:%M:%S"
+
                 ),
+
 
             "end_time":
+
                 end_time.strftime(
+
                     "%Y-%m-%d %H:%M:%S"
+
                 ),
+
 
             "duration_seconds":
+
                 round(
+
                     (
+
                         end_time -
+
                         self.start_time
+
                     ).total_seconds(),
+
                     2
+
                 ),
 
+
             "total_violations":
-                len(violations),
+
+                len(
+
+                    violations
+
+                ),
+
 
             "total_evidence":
-                len(evidence),
+
+                len(
+
+                    evidence
+
+                ),
+
 
             "cheating_score":
+
                 self.cheating_score,
 
+
             "final_trust_score":
+
                 self.trust_score,
 
+
             "final_risk_level":
+
                 self.get_risk_level(),
 
+
             "violations":
+
                 violations,
 
+
             "evidence":
+
                 evidence
+
         }
 
 
         # ----------------------------------------------------
-        # Write report
+        # WRITE REPORT
         # ----------------------------------------------------
 
         try:
 
             with open(
+
                 report_path,
+
                 "w",
+
                 encoding="utf-8"
+
             ) as file:
 
+
                 json.dump(
+
                     report_data,
+
                     file,
+
                     indent=4
+
                 )
 
 
             print()
-            print("========================================")
-            print("PROCTIFY SESSION REPORT GENERATED")
-            print("========================================")
+
             print(
+
+                "========================================"
+
+            )
+
+            print(
+
+                "PROCTIFY SESSION REPORT GENERATED"
+
+            )
+
+            print(
+
+                "========================================"
+
+            )
+
+            print(
+
                 f"Report: {report_path}"
+
             )
+
             print(
+
                 f"Violations: {len(violations)}"
+
             )
+
             print(
+
                 f"Evidence: {len(evidence)}"
+
             )
+
             print(
+
                 f"Trust Score: {self.trust_score}"
+
             )
+
             print(
+
                 f"Risk Level: {self.get_risk_level()}"
+
             )
-            print("========================================")
+
+            print(
+
+                "========================================"
+
+            )
+
             print()
 
 
@@ -726,8 +1777,10 @@ class MonitoringEngine:
         except Exception as error:
 
             print(
-                "Report generation error:",
-                error
-            )
 
+                "Report generation error:",
+
+                error
+
+            )
             return None

@@ -396,13 +396,37 @@ async function startVerification() {
             );
 
 
-        /*
-         * Student ID currently comes
-         * from this demo's student profile.
-         */
+/*
+ * Get the authenticated student's
+ * real details from the login session.
+ */
 
         const studentId =
-            "STUDENT_001";
+            sessionStorage.getItem(
+                "student_id"
+            );
+
+
+        /*
+        * Prevent verification if the student
+        * did not come through a valid login.
+        */
+
+        if (!studentId) {
+
+            statusBox.innerText =
+                "Student session not found. Please log in again.";
+
+            statusBox.classList.add(
+                "error"
+            );
+
+            verifyButton.disabled =
+                true;
+
+            return;
+
+        }
 
 
         /*

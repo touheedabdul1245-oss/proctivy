@@ -433,7 +433,7 @@
 
 <script>
 
-function login() {
+async function login() {
 
     const role =
         document.querySelector(
@@ -459,12 +459,9 @@ function login() {
         );
 
 
-    /*
-     * Temporary validation.
-     *
-     * We will connect this to the actual
-     * authentication system next.
-     */
+    /* =====================================================
+       BASIC VALIDATION
+    ===================================================== */
 
     if (!userId || !password) {
 
@@ -483,6 +480,11 @@ function login() {
         "none";
 
 
+    /* =====================================================
+       TEACHER LOGIN
+       Existing behavior preserved
+    ===================================================== */
+
     if (role === "teacher") {
 
         window.location.href =
@@ -493,25 +495,118 @@ function login() {
     }
 
 
+    /* =====================================================
+       STUDENT LOGIN - MYSQL AUTHENTICATION
+    ===================================================== */
+
     if (role === "student") {
 
-        /*
-         * Student does NOT go directly
-         * to the dashboard.
-         *
-         * First:
-         *
-         * Login
-         *   ↓
-         * Face Verification
-         *   ↓
-         * Student Dashboard
-         */
+        try {
 
-        window.location.href =
-            "/student/verify";
+            const response =
+                await fetch(
+                    "/api/student/login",
+                    {
 
-        return;
+                        method: "POST",
+
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body:
+                            JSON.stringify({
+
+                                username: userId,
+
+                                password: password
+
+                            })
+
+                    }
+                );
+
+
+            const data =
+                await response.json();
+
+
+            /* =============================================
+               INVALID LOGIN
+            ============================================= */
+
+            if (
+                !response.ok ||
+                data.success === false
+            ) {
+
+                message.innerText =
+                    data.error ||
+                    "Invalid username or password.";
+
+                message.style.display =
+                    "block";
+
+                return;
+
+            }
+
+
+            /* =============================================
+               VALID LOGIN
+
+               Save authenticated student information
+               for the next pages.
+            ============================================= */
+
+            if (data.student) {
+
+                sessionStorage.setItem(
+                    "student_id",
+                    data.student.student_id
+                );
+
+                sessionStorage.setItem(
+                    "student_name",
+                    data.student.student_name || ""
+                );
+
+                sessionStorage.setItem(
+                    "student_username",
+                    data.student.username || ""
+                );
+
+            }
+
+
+            /*
+             * Valid student:
+             *
+             * Login
+             *   ↓
+             * Face Verification
+             */
+
+            window.location.href =
+                "/student";
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Student login error:",
+                error
+            );
+
+            message.innerText =
+                "Unable to connect to the authentication server.";
+
+            message.style.display =
+                "block";
+
+        }
 
     }
 

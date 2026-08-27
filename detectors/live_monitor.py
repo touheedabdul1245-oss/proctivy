@@ -126,7 +126,9 @@ os.makedirs(
 print("Starting monitoring engine...")
 
 monitoring_engine = MonitoringEngine(
-    SESSION_ID
+    SESSION_ID,
+    STUDENT_ID,
+    EXAM_NAME
 )
 
 print("Monitoring engine ready.")
@@ -169,7 +171,6 @@ def calculate_risk(score):
 # ============================================================
 # UPDATE LIVE STATUS JSON
 # ============================================================
-
 def update_live_status(
     phone_count,
     person_count,
@@ -188,6 +189,10 @@ def update_live_status(
     status="ONLINE"
 ):
 
+    # ========================================================
+    # MYSQL IS THE PRIMARY LIVE DATA SOURCE
+    # ========================================================
+
     trust_score = int(
         monitoring_engine.get_trust_score()
     )
@@ -196,407 +201,113 @@ def update_live_status(
         monitoring_engine.get_risk_level()
     )
 
-    current_time = time.time()
-    # ============================================================
-    # PRESERVE TAB MONITORING STATE
-    # ============================================================
 
-    previous_tab_status = "CLEAR"
-    previous_tab_switch_count = 0
-    previous_last_tab_switch = ""
-    previous_tab_violation_until = 0
+    # ========================================================
+    # SYSTEM READINESS STATUS
+    # ========================================================
+
+    camera_available = bool(
+        CAMERA_AVAILABLE
+        and
+        status == "ONLINE"
+    )
+
+    audio_ready = bool(
+        audio_available
+        and
+        status == "ONLINE"
+    )
+
+    ai_available = bool(
+        AI_AVAILABLE
+        and
+        status == "ONLINE"
+    )
+
+    tab_available = bool(
+        status == "ONLINE"
+    )
+
 
     try:
 
-        if os.path.exists(
-            LIVE_STATUS_FILE
-        ):
+        monitoring_engine.update_live_student(
 
-            with open(
-                LIVE_STATUS_FILE,
-                "r",
-                encoding="utf-8"
-            ) as file:
+            student_id=
+                STUDENT_ID,
 
-                existing_live_data = json.load(
-                    file
-                )
+            exam_name=
+                EXAM_NAME,
 
+            status=
+                status,
 
-            existing_students = (
-                existing_live_data.get(
-                    "students",
-                    []
-                )
-            )
+            phone=
+                bool(phone_count > 0),
 
+            phone_count=
+                int(phone_count),
 
-            if isinstance(
-                existing_students,
-                list
-            ):
+            person_count=
+                int(person_count),
 
-                for existing_student in existing_students:
+            face_count=
+                int(face_count),
 
-                    if not isinstance(
-                        existing_student,
-                        dict
-                    ):
+            hand_count=
+                int(hand_count),
 
-                        continue
+            gaze=
+                str(gaze),
 
+            head_direction=
+                str(head_direction),
 
-                    if str(
-                        existing_student.get(
-                            "student_id",
-                            ""
-                        )
-                    ) == str(
-                        STUDENT_ID
-                    ):
+            audio=
+                str(audio_text),
 
-                        previous_tab_status = (
-                            existing_student.get(
-                                "tab_status",
-                                "CLEAR"
-                            )
-                        )
+            audio_volume=
+                float(audio_volume),
 
 
-                        previous_tab_switch_count = int(
-                            existing_student.get(
-                                "tab_switch_count",
-                                0
-                            )
-                        )
+            # ------------------------------------------------
+            # SYSTEM READINESS FLAGS
+            # ------------------------------------------------
+
+            camera_available=
+                camera_available,
+
+            audio_available=
+                audio_ready,
+
+            ai_available=
+                ai_available,
+
+            tab_available=
+                tab_available,
 
 
-                        previous_last_tab_switch = (
-                            existing_student.get(
-                                "last_tab_switch",
-                                ""
-                            )
-                        )
+            trust_score=
+                trust_score,
 
+            risk_level=
+                risk_level
 
-                        previous_tab_violation_until = float(
-                            existing_student.get(
-                                "tab_violation_until",
-                                0
-                            )
-                        )
-
-                        break
-
+        )
 
     except Exception as error:
 
+        print()
+
         print(
-            "Tab state read error:",
+            "MYSQL LIVE STUDENT UPDATE ERROR:"
+        )
+
+        print(
             error
         )
 
-
-    # ------------------------------------------------------------
-    # Keep TAB SWITCH visible for a short period
-    # ------------------------------------------------------------
-
-    if (
-        time.time() <
-        previous_tab_violation_until
-    ):
-
-        effective_last_event = (
-            "TAB SWITCH"
-        )
-
-        effective_tab_status = (
-            "VIOLATION"
-        )
-
-    else:
-
-        effective_last_event = (
-            last_event
-        )
-
-        effective_tab_status = (
-            "CLEAR"
-        )
-    student_data = {
-        
-
-
-        "student_id":
-            STUDENT_ID,
-        "camera_available":
-            bool(CAMERA_AVAILABLE),
-
-        "audio_available":
-            bool(audio_available),
-
-        "ai_available":
-            bool(AI_AVAILABLE),
-
-        "tab_available":
-            False,
-
-        "session_id":
-            SESSION_ID,
-
-        "exam_name":
-            EXAM_NAME,
-
-        "status":
-            status,
-
-        "trust_score":
-            int(trust_score),
-
-        "risk_level":
-            risk_level,
-
-        "phone":
-            bool(phone_count > 0),
-
-        "phone_count":
-            int(phone_count),
-
-        "person_count":
-            int(person_count),
-
-        "face_count":
-            int(face_count),
-
-        "hand_count":
-            int(hand_count),
-
-        "gaze":
-            gaze,
-
-        "head_direction":
-            head_direction,
-
-        "audio":
-            audio_text,
-
-        "audio_volume":
-            round(
-                float(audio_volume),
-                5
-            ),
-
-        "eyes_closed":
-            bool(eyes_closed),
-
-        "closed_duration":
-            round(
-                float(closed_duration),
-                2
-            ),
-
-        "yaw":
-            round(
-                float(yaw),
-                2
-            ),
-
-        "pitch":
-            round(
-                float(pitch),
-                2
-            ),
-
-        "calibration_complete":
-            bool(calibration_complete),
-
-        "last_event":
-            effective_last_event,
-
-        "last_update":
-            time.strftime(
-                "%H:%M:%S"
-            ),
-
-        "timestamp":
-            current_time,
-
-        "tab_status":
-            effective_tab_status,
-
-        "tab_switch_count":
-            previous_tab_switch_count,
-
-        "last_tab_switch":
-            previous_last_tab_switch,
-
-        "tab_violation_until":
-            previous_tab_violation_until
-    }
-
-
-    with status_lock:
-
-        try:
-
-            # ------------------------------------------------
-            # Read existing students
-            # ------------------------------------------------
-
-            existing_data = {}
-
-            if os.path.exists(
-                LIVE_STATUS_FILE
-            ):
-
-                try:
-
-                    with open(
-                        LIVE_STATUS_FILE,
-                        "r",
-                        encoding="utf-8"
-                    ) as file:
-
-                        existing_data = json.load(
-                            file
-                        )
-
-                except Exception:
-
-                    existing_data = {}
-
-
-            # ------------------------------------------------
-            # Normalize existing structure
-            # ------------------------------------------------
-
-            if isinstance(
-                existing_data,
-                dict
-            ):
-
-                students = existing_data.get(
-                    "students",
-                    []
-                )
-
-            elif isinstance(
-                existing_data,
-                list
-            ):
-
-                students = existing_data
-
-            else:
-
-                students = []
-
-
-            if not isinstance(
-                students,
-                list
-            ):
-
-                students = []
-
-
-            # ------------------------------------------------
-            # Remove old entry for this student
-            # ------------------------------------------------
-
-            updated_students = []
-
-            for student in students:
-
-                if not isinstance(
-                    student,
-                    dict
-                ):
-
-                    continue
-
-                if str(
-                    student.get(
-                        "student_id",
-                        ""
-                    )
-                ) != str(
-                    STUDENT_ID
-                ):
-
-                    updated_students.append(
-                        student
-                    )
-
-
-            # ------------------------------------------------
-            # Add current student
-            # ------------------------------------------------
-
-            updated_students.append(
-                student_data
-            )
-
-
-            # ------------------------------------------------
-            # Final JSON structure
-            # ------------------------------------------------
-
-            final_data = {
-
-                "system":
-                    "PROCTIFY",
-
-                "last_update":
-                    time.strftime(
-                        "%H:%M:%S"
-                    ),
-
-                "students":
-                    updated_students
-            }
-
-
-            # ------------------------------------------------
-            # Write temporary file first
-            # ------------------------------------------------
-
-            temp_file = (
-                LIVE_STATUS_FILE +
-                f".{os.getpid()}.tmp"
-            )
-
-
-            with open(
-                temp_file,
-                "w",
-                encoding="utf-8"
-            ) as file:
-
-                json.dump(
-                    final_data,
-                    file,
-                    indent=4
-                )
-
-
-            # ------------------------------------------------
-            # Replace old file
-            # ------------------------------------------------
-
-            os.replace(
-                temp_file,
-                LIVE_STATUS_FILE
-            )
-
-
-        except Exception as error:
-
-            print(
-                "Live status update error:",
-                error
-            )
-
+        print()
 
 # ============================================================
 # MARK STUDENT OFFLINE
@@ -604,134 +315,90 @@ def update_live_status(
 
 def mark_student_offline():
 
-    with status_lock:
+    # ========================================================
+    # MYSQL IS THE PRIMARY LIVE DATA SOURCE
+    # ========================================================
 
-        try:
+    try:
 
-            existing_data = {}
+        monitoring_engine.update_live_student(
 
-            if os.path.exists(
-                LIVE_STATUS_FILE
-            ):
+            student_id=
+                STUDENT_ID,
 
-                try:
+            exam_name=
+                EXAM_NAME,
 
-                    with open(
-                        LIVE_STATUS_FILE,
-                        "r",
-                        encoding="utf-8"
-                    ) as file:
+            status=
+                "OFFLINE",
 
-                        existing_data = json.load(
-                            file
-                        )
+            phone=
+                False,
 
-                except Exception:
+            phone_count=
+                0,
 
-                    existing_data = {}
+            person_count=
+                0,
+
+            face_count=
+                0,
+
+            hand_count=
+                0,
+
+            gaze=
+                "NO FACE",
+
+            head_direction=
+                "NO FACE",
+
+            audio=
+                "STOPPED",
+
+            audio_volume=
+                0.0,
 
 
-            if isinstance(
-                existing_data,
-                dict
-            ):
+            # ------------------------------------------------
+            # SYSTEM READINESS FLAGS
+            # ------------------------------------------------
 
-                students = existing_data.get(
-                    "students",
-                    []
+            camera_available=
+                False,
+
+            audio_available=
+                False,
+
+            ai_available=
+                False,
+
+            tab_available=
+                False,
+
+
+            trust_score=
+                int(
+                    monitoring_engine.get_trust_score()
+                ),
+
+            risk_level=
+                str(
+                    monitoring_engine.get_risk_level()
                 )
 
-            else:
+        )
 
-                students = []
+        print(
+            "Student marked OFFLINE in MySQL."
+        )
 
+    except Exception as error:
 
-            updated_students = []
-
-
-            for student in students:
-
-                if not isinstance(
-                    student,
-                    dict
-                ):
-
-                    continue
-
-
-                if str(
-                    student.get(
-                        "student_id",
-                        ""
-                    )
-                ) == str(
-                    STUDENT_ID
-                ):
-
-                    student["status"] = "OFFLINE"
-
-                    student["last_update"] = (
-                        time.strftime(
-                            "%H:%M:%S"
-                        )
-                    )
-
-
-                updated_students.append(
-                    student
-                )
-
-
-            final_data = {
-
-                "system":
-                    "PROCTIFY",
-
-                "last_update":
-                    time.strftime(
-                        "%H:%M:%S"
-                    ),
-
-                "students":
-                    updated_students
-            }
-
-
-            temp_file = (
-                LIVE_STATUS_FILE +
-                f".{os.getpid()}.tmp"
-            )
-
-
-            with open(
-                temp_file,
-                "w",
-                encoding="utf-8"
-            ) as file:
-
-                json.dump(
-                    final_data,
-                    file,
-                    indent=4
-                )
-            print("TEMP FILE CREATED:", temp_file)
-            print("TEMP FILE EXISTS:", os.path.exists(temp_file))
-
-
-            os.replace(
-                temp_file,
-                LIVE_STATUS_FILE
-            )
-
-
-        except Exception as error:
-
-            print(
-                "Offline status error:",
-                error
-            )
-
-
+        print(
+            "MYSQL OFFLINE UPDATE ERROR:",
+            error
+        )
 # ============================================================
 # YOLO
 # ============================================================
@@ -2383,11 +2050,11 @@ try:
 
             gaze in [
 
-                "LOOKING_LEFT",
+                "LOOKING LEFT",
 
-                "LOOKING_RIGHT",
+                "LOOKING RIGHT",
 
-                "LOOKING_DOWN"
+                "LOOKING DOWN"
 
             ]
 
@@ -2405,22 +2072,22 @@ try:
 
             ):
 
-                if gaze == "LOOKING_LEFT":
+                if gaze == "LOOKING LEFT":
 
                     violation_type = (
-                        "LOOKING_LEFT"
+                        "LOOKING LEFT"
                     )
 
-                elif gaze == "LOOKING_RIGHT":
+                elif gaze == "LOOKING RIGHT":
 
                     violation_type = (
-                        "LOOKING_RIGHT"
+                        "LOOKING RIGHT"
                     )
 
                 else:
 
                     violation_type = (
-                        "LOOKING_DOWN"
+                        "LOOKING DOWN"
                     )
 
 
@@ -3015,8 +2682,15 @@ finally:
     # GENERATE FINAL SESSION REPORT
     # ========================================================
 
-    monitoring_engine.generate_report()
+    report_path = monitoring_engine.generate_report()
 
+    # ========================================================
+    # MYSQL ALREADY CONTAINS THE REAL STUDENT / EXAM IDENTITY
+    # ========================================================
+
+    # The MonitoringEngine was initialized with STUDENT_ID and EXAM_NAME.
+    # Any generated JSON report is only a secondary export; MySQL remains
+    # the primary source for sessions, violations, evidence, and reports.
 
     # ========================================================
     # MARK STUDENT OFFLINE

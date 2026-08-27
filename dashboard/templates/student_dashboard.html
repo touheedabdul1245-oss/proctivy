@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+
 <html lang="en">
 
 <head>
@@ -485,6 +485,12 @@ async function loadStudentExams() {
 
     try {
 
+        if (!window.scheduledExamTimes) {
+
+            window.scheduledExamTimes = {};
+
+        }
+
         const response =
             await fetch(
                 "/api/exams",
@@ -511,6 +517,15 @@ async function loadStudentExams() {
                 "Invalid exam response"
             );
         }
+
+        /*
+         * Clear previously cached scheduled exam times.
+         *
+         * This prevents an exam that has become ACTIVE or
+         * EXPIRED in MySQL from continuing to use an old
+         * countdown on the student dashboard.
+         */
+        window.scheduledExamTimes = {};
 
         examGrid.innerHTML = "";
 
@@ -555,10 +570,6 @@ async function loadStudentExams() {
 
                 const isActive =
                     status === "ACTIVE";
-
-                if (!window.scheduledExamTimes) {
-                    window.scheduledExamTimes = {};
-                }
 
                 if (
                     status === "SCHEDULED" &&
@@ -894,6 +905,29 @@ loadStudentExams();
 setInterval(
     updateScheduledCountdowns,
     1000
+);
+
+
+/* =========================================================
+   PERIODIC EXAM STATUS REFRESH
+========================================================= */
+
+/*
+ * MySQL is the source of truth for exam status.
+ *
+ * Every 10 seconds, request the latest exam list so that:
+ *
+ * SCHEDULED → ACTIVE
+ * ACTIVE    → EXPIRED
+ *
+ * is reflected automatically on the student dashboard.
+ *
+ * Expired exams are excluded by /api/exams and therefore
+ * disappear from this page after the next refresh.
+ */
+setInterval(
+    loadStudentExams,
+    10000
 );
 
 </script>

@@ -1,11 +1,12 @@
 from flask import Flask, render_template, jsonify, request
+import mysql.connector
 import json
 import os
 import base64
 import numpy as np
 import cv2
 import mediapipe as mp
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 # ============================================================
@@ -13,6 +14,46 @@ from datetime import datetime
 # ============================================================
 
 app = Flask(__name__)
+
+# ============================================================
+# MYSQL CONFIGURATION
+# ============================================================
+
+DB_CONFIG = {
+
+    "host": "localhost",
+
+    "user": "root",
+
+    "password": "aasmaan@14",
+
+    "database": "proctify_db"
+
+}
+
+
+# ============================================================
+# GET DATABASE CONNECTION
+# ============================================================
+
+def get_database_connection():
+
+    try:
+
+        connection = mysql.connector.connect(
+            **DB_CONFIG
+        )
+
+        return connection
+
+    except mysql.connector.Error as error:
+
+        print(
+            "MySQL connection error:",
+            error
+        )
+
+        return None
 
 
 # ============================================================
@@ -88,7 +129,81 @@ def load_live_data():
 # GET STUDENTS
 # ============================================================
 
+# ============================================================
+# GET STUDENTS
+# ============================================================
+
 def get_students():
+
+    # --------------------------------------------------------
+    # FIRST: TRY MYSQL
+    # --------------------------------------------------------
+
+    database_students = (
+        get_students_from_database()
+    )
+
+
+    if database_students:
+
+        cleaned_students = []
+
+
+        for student in database_students:
+
+            if isinstance(
+                student,
+                dict
+            ):
+
+                cleaned_students.append(
+                    student.copy()
+                )
+
+
+        return cleaned_students
+
+
+    # --------------------------------------------------------
+    # FALLBACK: LIVE STATUS JSON
+    #
+    # This keeps your existing monitoring system working
+    # while MySQL integration is being completed.
+    # --------------------------------------------------------
+
+    data = load_live_data()
+
+
+    students = data.get(
+        "students",
+        []
+    )
+
+
+    if not isinstance(
+        students,
+        list
+    ):
+
+        return []
+
+
+    cleaned_students = []
+
+
+    for student in students:
+
+        if isinstance(
+            student,
+            dict
+        ):
+
+            cleaned_students.append(
+                student.copy()
+            )
+
+
+    return cleaned_students
 
     data = load_live_data()
 
@@ -309,6 +424,379 @@ def normalize_student(student):
     )
 
     return student
+# ============================================================
+# GET LIVE STUDENTS FROM MYSQL
+# ============================================================
+
+def get_students_from_database():
+
+    connection = get_database_connection()
+
+    if connection is None:
+
+        return []
+
+
+    cursor = None
+
+
+    try:
+
+        cursor = connection.cursor(
+            dictionary=True
+        )
+
+
+        query = """
+
+            SELECT
+
+                ls.*,
+
+                (
+                    SELECT
+                        REPLACE(
+                            v.violation_type,
+                            '_',
+                            ' '
+                        )
+
+                    FROM violations v
+
+                    WHERE
+                        v.session_id = ls.session_id
+
+                    ORDER BY
+                        v.timestamp DESC
+
+                    LIMIT 1
+
+                ) AS last_event
+
+            FROM live_students ls
+
+            ORDER BY
+                ls.student_id ASC
+
+        """
+
+
+        cursor.execute(
+            query
+        )
+
+
+        rows = cursor.fetchall()
+
+
+        students = []
+
+
+        for row in rows:
+
+            if not isinstance(
+                row,
+                dict
+            ):
+                continue
+
+
+            student_id = str(
+                row.get(
+                    "student_id",
+                    ""
+                )
+            )
+
+
+            if not student_id:
+                continue
+
+
+            students.append(
+                row
+            )
+
+
+        return students
+
+
+    except mysql.connector.Error as error:
+
+        print(
+            "MySQL live students error:",
+            error
+        )
+
+        return []
+
+
+    finally:
+
+        if cursor is not None:
+
+            cursor.close()
+
+
+        connection.close()
+
+# ============================================================
+# GET STUDENT VIOLATIONS FROM MYSQL
+# ============================================================
+
+def get_student_violations(
+    session_id
+):
+
+    connection = get_database_connection()
+
+
+    if connection is None:
+
+        return []
+
+
+    cursor = None
+
+
+    try:
+
+        cursor = connection.cursor(
+            dictionary=True
+        )
+
+
+        query = """
+
+            SELECT
+
+                id,
+
+                violation_type,
+
+                severity,
+
+                penalty,
+
+                description,
+
+                timestamp
+
+            FROM violations
+
+            WHERE session_id = %s
+
+            ORDER BY timestamp DESC
+
+        """
+
+
+        cursor.execute(
+
+            query,
+
+            (
+                str(session_id),
+            )
+
+        )
+
+
+        violations = cursor.fetchall()
+
+
+        return violations
+
+
+    except mysql.connector.Error as error:
+
+        print(
+            "MySQL violation read error:",
+            error
+        )
+
+        return []
+
+
+    finally:
+
+        if cursor is not None:
+
+            cursor.close()
+
+
+        connection.close()
+
+
+# ============================================================
+# GET STUDENT EVIDENCE FROM MYSQL
+# ============================================================
+
+def get_student_evidence(
+    session_id
+):
+
+    connection = get_database_connection()
+
+
+    if connection is None:
+
+        return []
+
+
+    cursor = None
+
+
+    try:
+
+        cursor = connection.cursor(
+            dictionary=True
+        )
+
+
+        query = """
+
+            SELECT
+
+                id,
+
+                violation_id,
+
+                file_path,
+
+                timestamp
+
+            FROM evidence
+
+            WHERE session_id = %s
+
+            ORDER BY timestamp DESC
+
+        """
+
+
+        cursor.execute(
+
+            query,
+
+            (
+                str(session_id),
+            )
+
+        )
+
+
+        evidence = cursor.fetchall()
+
+
+        return evidence
+
+
+    except mysql.connector.Error as error:
+
+        print(
+            "MySQL evidence read error:",
+            error
+        )
+
+        return []
+
+
+    finally:
+
+        if cursor is not None:
+
+            cursor.close()
+
+
+        connection.close()
+
+
+# ============================================================
+# GET TRUST SCORE HISTORY FROM MYSQL
+# ============================================================
+
+def get_trust_score_history(
+    session_id
+):
+
+    connection = get_database_connection()
+
+
+    if connection is None:
+
+        return []
+
+
+    cursor = None
+
+
+    try:
+
+        cursor = connection.cursor(
+            dictionary=True
+        )
+
+
+        query = """
+
+            SELECT
+
+                id,
+
+                old_score,
+
+                new_score,
+
+                reason,
+
+                timestamp
+
+            FROM trust_score_history
+
+            WHERE session_id = %s
+
+            ORDER BY timestamp ASC
+
+        """
+
+
+        cursor.execute(
+
+            query,
+
+            (
+                str(session_id),
+            )
+
+        )
+
+
+        history = cursor.fetchall()
+
+
+        return history
+
+
+    except mysql.connector.Error as error:
+
+        print(
+            "MySQL trust history error:",
+            error
+        )
+
+        return []
+
+
+    finally:
+
+        if cursor is not None:
+
+            cursor.close()
+
+
+        connection.close()
+
 # ============================================================
 # CREATE FACE DESCRIPTOR
 # ============================================================
@@ -538,6 +1026,7 @@ def api_students():
 
 
 # ============================================================
+# ============================================================
 # API - SINGLE STUDENT
 # ============================================================
 
@@ -548,11 +1037,13 @@ def api_student(student_id):
 
     students = get_students()
 
+
     for student in students:
 
         student = normalize_student(
             student
         )
+
 
         if str(
             student.get(
@@ -562,13 +1053,56 @@ def api_student(student_id):
             student_id
         ):
 
+
+            session_id = student.get(
+                "session_id",
+                ""
+            )
+
+
+            violations = (
+                get_student_violations(
+                    session_id
+                )
+            )
+
+
+            evidence = (
+                get_student_evidence(
+                    session_id
+                )
+            )
+
+
+            trust_history = (
+                get_trust_score_history(
+                    session_id
+                )
+            )
+
+
             return jsonify({
 
                 "success": True,
 
-                "student": student
+                "student": student,
+
+                "violation_count":
+                    len(
+                        violations
+                    ),
+
+                "violations":
+                    violations,
+
+                "evidence":
+                    evidence,
+
+                "trust_score_history":
+                    trust_history
 
             })
+
 
     return jsonify({
 
@@ -578,7 +1112,6 @@ def api_student(student_id):
 
     }), 404
 
-
 # ============================================================
 # API - LIVE STATUS
 # ============================================================
@@ -586,37 +1119,59 @@ def api_student(student_id):
 @app.route("/api/status")
 def api_status():
 
-    data = load_live_data()
-
     students = [
-        normalize_student(student)
+
+        normalize_student(
+            student
+        )
+
         for student in get_students()
+
     ]
+
+
+    online_students = [
+
+        student
+
+        for student in students
+
+        if str(
+            student.get(
+                "status",
+                ""
+            )
+        ).upper() == "ONLINE"
+
+    ]
+
 
     return jsonify({
 
         "success": True,
 
         "system":
-            data.get(
-                "system",
-                "PROCTIFY"
-            ),
+            "PROCTIFY",
 
         "last_update":
-            data.get(
-                "last_update",
-                ""
+            datetime.now().strftime(
+                "%H:%M:%S"
             ),
 
         "student_count":
-            len(students),
+            len(
+                online_students
+            ),
 
         "students":
-            students
+            students,
+
+        "online_students":
+            len(
+                online_students
+            )
 
     })
-
 # ============================================================
 # API - VERIFY STUDENT FACE
 # ============================================================
@@ -1061,6 +1616,9 @@ os.makedirs(
 )
 def create_exam():
 
+    connection = None
+    cursor = None
+
     try:
 
         data = request.get_json()
@@ -1088,22 +1646,29 @@ def create_exam():
             "questions",
             []
         )
-        scheduled_start = str(
-            data.get("scheduled_start", "")
-        ).strip()
 
-        if not scheduled_start:
-            return jsonify({
-                "success": False,
-                "error": "Scheduled start time is required"
-            }), 400
+        scheduled_start = str(
+            data.get(
+                "scheduled_start",
+                ""
+            )
+        ).strip()
 
 
         # ----------------------------------------------------
         # VALIDATION
         # ----------------------------------------------------
 
+        if not scheduled_start:
+
+            return jsonify({
+                "success": False,
+                "error": "Scheduled start time is required"
+            }), 400
+
+
         if not exam_name:
+
             return jsonify({
                 "success": False,
                 "error": "Exam name is required"
@@ -1111,6 +1676,7 @@ def create_exam():
 
 
         if not subject:
+
             return jsonify({
                 "success": False,
                 "error": "Subject is required"
@@ -1118,6 +1684,7 @@ def create_exam():
 
 
         if not duration:
+
             return jsonify({
                 "success": False,
                 "error": "Duration is required"
@@ -1125,6 +1692,7 @@ def create_exam():
 
 
         if not questions:
+
             return jsonify({
                 "success": False,
                 "error": "At least one question is required"
@@ -1132,15 +1700,83 @@ def create_exam():
 
 
         # ----------------------------------------------------
+        # CONVERT DURATION
+        # ----------------------------------------------------
+
+        duration = int(
+            duration
+        )
+
+
+        # ----------------------------------------------------
+        # CONVERT SCHEDULED START TIME
+        # ----------------------------------------------------
+        #
+        # Supports the datetime-local format sent
+        # by the teacher exam creation page.
+        #
+        # Example:
+        # 2026-08-27T14:30
+        # ----------------------------------------------------
+
+        try:
+
+            scheduled_start_dt = datetime.fromisoformat(
+                scheduled_start
+            )
+
+        except ValueError:
+
+            return jsonify({
+                "success": False,
+                "error": "Invalid scheduled start time"
+            }), 400
+
+
+        # ----------------------------------------------------
+        # CALCULATE EXAM END TIME
+        # ----------------------------------------------------
+
+        scheduled_end_dt = (
+            scheduled_start_dt +
+            timedelta(
+                minutes=duration
+            )
+        )
+
+
+        # ----------------------------------------------------
         # CREATE EXAM ID
         # ----------------------------------------------------
 
         exam_id = (
+
             "EXAM_" +
+
             datetime.now().strftime(
                 "%Y%m%d_%H%M%S"
             )
+
         )
+
+
+        # ----------------------------------------------------
+        # DETERMINE INITIAL STATUS
+        # ----------------------------------------------------
+
+        current_time = datetime.now()
+
+        if current_time >= scheduled_end_dt:
+
+            exam_status = "EXPIRED"
+
+        elif current_time >= scheduled_start_dt:
+
+            exam_status = "ACTIVE"
+
+        else:
+
+            exam_status = "SCHEDULED"
 
 
         # ----------------------------------------------------
@@ -1159,87 +1795,202 @@ def create_exam():
                 subject,
 
             "duration":
-                int(duration),
+                duration,
 
             "questions":
                 questions,
 
             "question_count":
-                len(questions),
-
-            "status":
-                "SCHEDULED",
-
-            "created_at":
-                datetime.now().isoformat(),
+                len(
+                    questions
+                ),
 
             "scheduled_start":
-                scheduled_start
+                scheduled_start_dt.isoformat(),
+
+            "scheduled_end":
+                scheduled_end_dt.isoformat(),
+
+            "status":
+                exam_status,
+
+            "created_at":
+                datetime.now().isoformat()
 
         }
 
 
         # ----------------------------------------------------
-        # SAVE EXAM JSON
+        # CONNECT TO MYSQL
         # ----------------------------------------------------
 
-        exam_file = os.path.join(
-            EXAMS_DIR,
-            exam_id + ".json"
+        connection = (
+            get_database_connection()
         )
 
 
-        with open(
-            exam_file,
-            "w",
-            encoding="utf-8"
-        ) as file:
+        if connection is None:
 
-            json.dump(
-                exam_data,
-                file,
-                indent=4
+            return jsonify({
+
+                "success":
+                    False,
+
+                "error":
+                    "Unable to connect to MySQL database"
+
+            }), 500
+
+
+        cursor = connection.cursor()
+
+
+        # ----------------------------------------------------
+        # INSERT EXAM INTO MYSQL
+        # ----------------------------------------------------
+
+        query = """
+
+            INSERT INTO exams (
+
+                exam_id,
+
+                exam_name,
+
+                subject,
+
+                duration,
+
+                questions,
+
+                question_count,
+
+                scheduled_start,
+
+                scheduled_end,
+
+                status
+
             )
 
+            VALUES (
+
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s
+
+            )
+
+        """
+
+
+        cursor.execute(
+
+            query,
+
+            (
+
+                exam_id,
+
+                exam_name,
+
+                subject,
+
+                duration,
+
+                json.dumps(
+                    questions
+                ),
+
+                len(
+                    questions
+                ),
+
+                scheduled_start_dt,
+
+                scheduled_end_dt,
+
+                exam_status
+
+            )
+
+        )
+
+
+        connection.commit()
+
+
+        # ----------------------------------------------------
+        # SUCCESS LOG
+        # ----------------------------------------------------
 
         print()
+
         print(
             "========================================"
         )
+
         print(
-            "       PROCTIFY EXAM CREATED"
+            "   PROCTIFY EXAM CREATED IN MYSQL"
         )
+
         print(
             "========================================"
         )
+
         print(
             "Exam ID:",
             exam_id
         )
+
         print(
             "Exam Name:",
             exam_name
         )
+
         print(
             "Subject:",
             subject
         )
+
         print(
             "Questions:",
-            len(questions)
+            len(
+                questions
+            )
         )
+
         print(
             "Duration:",
             duration,
             "minutes"
         )
+
         print(
-            "Saved:",
-            exam_file
+            "Scheduled Start:",
+            scheduled_start_dt
         )
+
+        print(
+            "Scheduled End:",
+            scheduled_end_dt
+        )
+
+        print(
+            "Status:",
+            exam_status
+        )
+
         print(
             "========================================"
         )
+
         print()
 
 
@@ -1259,10 +2010,16 @@ def create_exam():
 
     except Exception as error:
 
+        if connection is not None:
+
+            connection.rollback()
+
+
         print(
             "Exam creation error:",
             error
         )
+
 
         return jsonify({
 
@@ -1273,6 +2030,18 @@ def create_exam():
                 str(error)
 
         }), 500
+
+
+    finally:
+
+        if cursor is not None:
+
+            cursor.close()
+
+
+        if connection is not None:
+
+            connection.close()
 # ============================================================
 # GET AVAILABLE EXAMS
 # ============================================================
@@ -1283,107 +2052,206 @@ def create_exam():
 )
 def get_exams():
 
+    connection = None
+    cursor = None
+
     try:
 
-        exams = []
+        connection = get_database_connection()
 
-        if os.path.exists(EXAMS_DIR):
 
-            for filename in os.listdir(EXAMS_DIR):
+        if connection is None:
 
-                if not filename.endswith(".json"):
-                    continue
+            return jsonify({
 
-                exam_file = os.path.join(
-                    EXAMS_DIR,
-                    filename
-                )
+                "success": False,
+
+                "error": "Unable to connect to MySQL database",
+
+                "exams": []
+
+            }), 500
+
+
+        cursor = connection.cursor(
+            dictionary=True
+        )
+
+
+        # ----------------------------------------------------
+        # UPDATE EXAM STATUS BASED ON CURRENT TIME
+        # ----------------------------------------------------
+
+        current_time = datetime.now()
+
+
+        # Any exam whose end time has passed is EXPIRED
+
+        expire_query = """
+
+            UPDATE exams
+
+            SET status = 'EXPIRED'
+
+            WHERE scheduled_end <= %s
+
+            AND status != 'EXPIRED'
+
+        """
+
+
+        cursor.execute(
+
+            expire_query,
+
+            (
+                current_time,
+            )
+
+        )
+
+
+        # Scheduled exams become ACTIVE when their
+        # scheduled start time arrives.
+
+        activate_query = """
+
+            UPDATE exams
+
+            SET status = 'ACTIVE'
+
+            WHERE scheduled_start <= %s
+
+            AND scheduled_end > %s
+
+            AND status = 'SCHEDULED'
+
+        """
+
+
+        cursor.execute(
+
+            activate_query,
+
+            (
+                current_time,
+                current_time
+            )
+
+        )
+
+
+        connection.commit()
+
+
+        # ----------------------------------------------------
+        # GET ONLY NON-EXPIRED EXAMS
+        # ----------------------------------------------------
+
+        select_query = """
+
+            SELECT
+
+                exam_id,
+
+                exam_name,
+
+                subject,
+
+                duration,
+
+                questions,
+
+                question_count,
+
+                scheduled_start,
+
+                scheduled_end,
+
+                status,
+
+                created_at
+
+            FROM exams
+
+            WHERE status != 'EXPIRED'
+
+            ORDER BY created_at DESC
+
+        """
+
+
+        cursor.execute(
+            select_query
+        )
+
+
+        exams = cursor.fetchall()
+
+
+        # ----------------------------------------------------
+        # CONVERT MYSQL VALUES FOR JSON RESPONSE
+        # ----------------------------------------------------
+
+        for exam in exams:
+
+            questions = exam.get(
+                "questions"
+            )
+
+
+            # MySQL JSON may arrive as a string
+            # or already as a Python object.
+
+            if isinstance(
+                questions,
+                str
+            ):
 
                 try:
 
-                    with open(
-                        exam_file,
-                        "r",
-                        encoding="utf-8"
-                    ) as file:
-
-                        exam = json.load(file)
-
-                    if isinstance(exam, dict):
-
-                        status = str(
-                            exam.get("status", "")
-                        ).upper()
-
-                        scheduled_start = exam.get(
-                            "scheduled_start"
-                        )
-
-                        if (
-                            status == "SCHEDULED"
-                            and scheduled_start
-                        ):
-
-                            try:
-
-                                scheduled_time = datetime.fromisoformat(
-                                    scheduled_start
-                                )
-
-                                if datetime.now() >= scheduled_time:
-
-                                    exam["status"] = "ACTIVE"
-
-                                    with open(
-                                        exam_file,
-                                        "w",
-                                        encoding="utf-8"
-                                    ) as update_file:
-
-                                        json.dump(
-                                            exam,
-                                            update_file,
-                                            indent=4
-                                        )
-
-                            except Exception as error:
-
-                                print(
-                                    "Scheduled exam check error:",
-                                    filename,
-                                    error
-                                )
-
-                        exams.append(exam)
-
-                except Exception as error:
-
-                    print(
-                        "Exam read error:",
-                        filename,
-                        error
+                    exam["questions"] = json.loads(
+                        questions
                     )
 
+                except Exception:
 
-        # ----------------------------------------------------
-        # Newest exam first
-        # ----------------------------------------------------
+                    exam["questions"] = []
 
-        exams.sort(
-            key=lambda exam:
-                exam.get(
-                    "created_at",
-                    ""
-                ),
-            reverse=True
-        )
+
+            # Convert datetime values so Flask can
+            # safely return them as JSON.
+
+            for field in [
+
+                "scheduled_start",
+
+                "scheduled_end",
+
+                "created_at"
+
+            ]:
+
+                value = exam.get(
+                    field
+                )
+
+
+                if isinstance(
+                    value,
+                    datetime
+                ):
+
+                    exam[field] = value.isoformat()
 
 
         return jsonify({
 
             "success": True,
 
-            "count": len(exams),
+            "count": len(
+                exams
+            ),
 
             "exams": exams
 
@@ -1392,21 +2260,40 @@ def get_exams():
 
     except Exception as error:
 
+        if connection is not None:
+
+            connection.rollback()
+
+
         print(
             "Get exams error:",
             error
         )
 
+
         return jsonify({
 
             "success": False,
 
-            "error": str(error),
+            "error": str(
+                error
+            ),
 
             "exams": []
 
         }), 500
 
+
+    finally:
+
+        if cursor is not None:
+
+            cursor.close()
+
+
+        if connection is not None:
+
+            connection.close()
 # ============================================================
 # GET SINGLE EXAM
 # ============================================================
@@ -1417,17 +2304,146 @@ def get_exams():
 )
 def get_single_exam(exam_id):
 
+    connection = None
+    cursor = None
+
     try:
 
-        exam_file = os.path.join(
-            EXAMS_DIR,
-            exam_id + ".json"
+        connection = get_database_connection()
+
+
+        if connection is None:
+
+            return jsonify({
+
+                "success": False,
+
+                "error":
+                    "Unable to connect to MySQL database"
+
+            }), 500
+
+
+        cursor = connection.cursor(
+            dictionary=True
         )
 
 
-        if not os.path.exists(
-            exam_file
-        ):
+        # ----------------------------------------------------
+        # UPDATE EXAM STATUS USING CURRENT TIME
+        # ----------------------------------------------------
+
+        current_time = datetime.now()
+
+
+        # Expire the exam if its end time has passed.
+
+        cursor.execute(
+
+            """
+
+            UPDATE exams
+
+            SET status = 'EXPIRED'
+
+            WHERE exam_id = %s
+
+            AND scheduled_end <= %s
+
+            AND status != 'EXPIRED'
+
+            """,
+
+            (
+                exam_id,
+                current_time
+            )
+
+        )
+
+
+        # Activate the exam if its scheduled start time
+        # has arrived and it has not expired.
+
+        cursor.execute(
+
+            """
+
+            UPDATE exams
+
+            SET status = 'ACTIVE'
+
+            WHERE exam_id = %s
+
+            AND scheduled_start <= %s
+
+            AND scheduled_end > %s
+
+            AND status = 'SCHEDULED'
+
+            """,
+
+            (
+                exam_id,
+                current_time,
+                current_time
+            )
+
+        )
+
+
+        connection.commit()
+
+
+        # ----------------------------------------------------
+        # GET EXAM FROM MYSQL
+        # ----------------------------------------------------
+
+        cursor.execute(
+
+            """
+
+            SELECT
+
+                exam_id,
+
+                exam_name,
+
+                subject,
+
+                duration,
+
+                questions,
+
+                question_count,
+
+                scheduled_start,
+
+                scheduled_end,
+
+                status,
+
+                created_at
+
+            FROM exams
+
+            WHERE exam_id = %s
+
+            LIMIT 1
+
+            """,
+
+            (
+                exam_id,
+            )
+
+        )
+
+
+        exam = cursor.fetchone()
+
+
+        if not exam:
 
             return jsonify({
 
@@ -1439,15 +2455,51 @@ def get_single_exam(exam_id):
             }), 404
 
 
-        with open(
-            exam_file,
-            "r",
-            encoding="utf-8"
-        ) as file:
+        # ----------------------------------------------------
+        # CONVERT QUESTIONS
+        # ----------------------------------------------------
 
-            exam = json.load(
-                file
+        if isinstance(
+            exam.get("questions"),
+            str
+        ):
+
+            try:
+
+                exam["questions"] = json.loads(
+                    exam["questions"]
+                )
+
+            except Exception:
+
+                exam["questions"] = []
+
+
+        # ----------------------------------------------------
+        # CONVERT DATETIME VALUES
+        # ----------------------------------------------------
+
+        for field in [
+
+            "scheduled_start",
+
+            "scheduled_end",
+
+            "created_at"
+
+        ]:
+
+            value = exam.get(
+                field
             )
+
+
+            if isinstance(
+                value,
+                datetime
+            ):
+
+                exam[field] = value.isoformat()
 
 
         return jsonify({
@@ -1466,6 +2518,7 @@ def get_single_exam(exam_id):
             error
         )
 
+
         return jsonify({
 
             "success": False,
@@ -1474,6 +2527,18 @@ def get_single_exam(exam_id):
                 str(error)
 
         }), 500
+
+
+    finally:
+
+        if cursor is not None:
+
+            cursor.close()
+
+
+        if connection is not None:
+
+            connection.close()
 # ============================================================
 # REPORT TAB SWITCH
 # ============================================================
@@ -2427,10 +3492,8 @@ def submit_exam(exam_id):
         }), 500
 
 # ============================================================
+# ============================================================
 # MONITOR STUDENT
-#
-# NOTE:
-# monitor.html will be created in the next step.
 # ============================================================
 
 @app.route(
@@ -2440,13 +3503,16 @@ def monitor_student(student_id):
 
     students = get_students()
 
+
     selected_student = None
+
 
     for student in students:
 
         student = normalize_student(
             student
         )
+
 
         if str(
             student.get(
@@ -2469,10 +3535,409 @@ def monitor_student(student_id):
         )
 
 
-    return render_template(
-        "monitor.html",
-        student=selected_student
+    session_id = selected_student.get(
+        "session_id",
+        ""
     )
+
+
+    violations = (
+        get_student_violations(
+            session_id
+        )
+    )
+
+
+    evidence = (
+        get_student_evidence(
+            session_id
+        )
+    )
+
+
+    trust_history = (
+        get_trust_score_history(
+            session_id
+        )
+    )
+
+
+    return render_template(
+
+        "monitor.html",
+
+        student=selected_student,
+
+        violations=violations,
+
+        evidence=evidence,
+
+        trust_history=trust_history
+
+    )
+
+
+# ============================================================
+# STUDENT ENROLLMENT - MYSQL
+# ============================================================
+#
+# The teacher can enroll any number of students. Every enrolled
+# student is stored in the MySQL `students` table using the existing
+# columns:
+#   student_id, student_name, username, password, created_at
+#
+# POST /api/students/enroll
+# Body:
+# {
+#     "student_id": "STUDENT_001",
+#     "student_name": "Student Name",
+#     "username": "student01",
+#     "password": "password"
+# }
+#
+# GET /api/enrolled-students
+# Returns all students enrolled by the teacher.
+# ============================================================
+
+@app.route(
+    "/api/students/enroll",
+    methods=["POST"]
+)
+def enroll_student():
+
+    connection = None
+    cursor = None
+
+    try:
+
+        data = request.get_json(
+            silent=True
+        ) or {}
+
+        student_id = str(
+            data.get(
+                "student_id",
+                ""
+            )
+        ).strip()
+
+        student_name = str(
+            data.get(
+                "student_name",
+                ""
+            )
+        ).strip()
+
+        username = str(
+            data.get(
+                "username",
+                ""
+            )
+        ).strip()
+
+        password = str(
+            data.get(
+                "password",
+                ""
+            )
+        ).strip()
+
+        if not student_id:
+
+            return jsonify({
+                "success": False,
+                "error": "Student ID is required"
+            }), 400
+
+        if not student_name:
+
+            return jsonify({
+                "success": False,
+                "error": "Student name is required"
+            }), 400
+
+        if not username:
+
+            return jsonify({
+                "success": False,
+                "error": "Username is required"
+            }), 400
+
+        if not password:
+
+            return jsonify({
+                "success": False,
+                "error": "Password is required"
+            }), 400
+
+        connection = get_database_connection()
+
+        if connection is None:
+
+            return jsonify({
+                "success": False,
+                "error": "Unable to connect to MySQL"
+            }), 500
+
+        cursor = connection.cursor(
+            dictionary=True
+        )
+
+        # --------------------------------------------------------
+        # CHECK STUDENT ID
+        # --------------------------------------------------------
+
+        cursor.execute(
+            """
+            SELECT student_id
+            FROM students
+            WHERE student_id = %s
+            LIMIT 1
+            """,
+            (
+                student_id,
+            )
+        )
+
+        if cursor.fetchone():
+
+            return jsonify({
+                "success": False,
+                "error": "Student ID already exists"
+            }), 409
+
+        # --------------------------------------------------------
+        # CHECK USERNAME
+        # --------------------------------------------------------
+
+        cursor.execute(
+            """
+            SELECT username
+            FROM students
+            WHERE username = %s
+            LIMIT 1
+            """,
+            (
+                username,
+            )
+        )
+
+        if cursor.fetchone():
+
+            return jsonify({
+                "success": False,
+                "error": "Username already exists"
+            }), 409
+
+        # --------------------------------------------------------
+        # INSERT STUDENT INTO MYSQL
+        # --------------------------------------------------------
+
+        cursor.execute(
+            """
+            INSERT INTO students (
+                student_id,
+                student_name,
+                username,
+                password,
+                created_at
+            )
+            VALUES (
+                %s,
+                %s,
+                %s,
+                %s,
+                NOW()
+            )
+            """,
+            (
+                student_id,
+                student_name,
+                username,
+                password
+            )
+        )
+
+        connection.commit()
+
+        enrolled_student = {
+            "student_id": student_id,
+            "student_name": student_name,
+            "username": username
+        }
+
+        print()
+        print(
+            "========================================"
+        )
+        print(
+            "       PROCTIFY STUDENT ENROLLED"
+        )
+        print(
+            "========================================"
+        )
+        print(
+            "Student ID:",
+            student_id
+        )
+        print(
+            "Student Name:",
+            student_name
+        )
+        print(
+            "Username:",
+            username
+        )
+        print(
+            "========================================"
+        )
+        print()
+
+        return jsonify({
+            "success": True,
+            "message": "Student enrolled successfully",
+            "student": enrolled_student
+        }), 201
+
+    except mysql.connector.Error as error:
+
+        if connection is not None:
+            connection.rollback()
+
+        print(
+            "Student enrollment MySQL error:",
+            error
+        )
+
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 500
+
+    except Exception as error:
+
+        if connection is not None:
+            connection.rollback()
+
+        print(
+            "Student enrollment error:",
+            error
+        )
+
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 500
+
+    finally:
+
+        if cursor is not None:
+            cursor.close()
+
+        if connection is not None:
+            connection.close()
+
+
+# ============================================================
+# GET ALL ENROLLED STUDENTS - MYSQL
+# ============================================================
+
+@app.route(
+    "/api/enrolled-students",
+    methods=["GET"]
+)
+def get_enrolled_students():
+
+    connection = None
+    cursor = None
+
+    try:
+
+        connection = get_database_connection()
+
+        if connection is None:
+
+            return jsonify({
+                "success": False,
+                "error": "Unable to connect to MySQL",
+                "count": 0,
+                "students": []
+            }), 500
+
+        cursor = connection.cursor(
+            dictionary=True
+        )
+
+        cursor.execute(
+            """
+            SELECT
+                student_id,
+                student_name,
+                username,
+                created_at
+            FROM students
+            ORDER BY created_at DESC
+            """
+        )
+
+        students = cursor.fetchall()
+
+        for student in students:
+
+            created_at = student.get(
+                "created_at"
+            )
+
+            if isinstance(
+                created_at,
+                datetime
+            ):
+
+                student[
+                    "created_at"
+                ] = created_at.isoformat()
+
+        return jsonify({
+            "success": True,
+            "count": len(students),
+            "students": students
+        })
+
+    except mysql.connector.Error as error:
+
+        print(
+            "Enrolled students MySQL read error:",
+            error
+        )
+
+        return jsonify({
+            "success": False,
+            "error": str(error),
+            "count": 0,
+            "students": []
+        }), 500
+
+    except Exception as error:
+
+        print(
+            "Enrolled students read error:",
+            error
+        )
+
+        return jsonify({
+            "success": False,
+            "error": str(error),
+            "count": 0,
+            "students": []
+        }), 500
+
+    finally:
+
+        if cursor is not None:
+            cursor.close()
+
+        if connection is not None:
+            connection.close()
 
 
 # ============================================================
@@ -2495,7 +3960,195 @@ def health():
 
     })
 
+# ============================================================
+# STUDENT AUTHENTICATION - MYSQL
+# ============================================================
 
+@app.route(
+    "/api/student/login",
+    methods=["POST"]
+)
+def student_login():
+
+    connection = None
+    cursor = None
+
+    try:
+
+        data = request.get_json(
+            silent=True
+        ) or {}
+
+        username = str(
+            data.get(
+                "username",
+                ""
+            )
+        ).strip()
+
+        password = str(
+            data.get(
+                "password",
+                ""
+            )
+        ).strip()
+
+
+        # ----------------------------------------------------
+        # VALIDATE INPUT
+        # ----------------------------------------------------
+
+        if not username or not password:
+
+            return jsonify({
+
+                "success": False,
+
+                "error":
+                    "Username and password are required"
+
+            }), 400
+
+
+        # ----------------------------------------------------
+        # CONNECT TO MYSQL
+        # ----------------------------------------------------
+
+        connection = get_database_connection()
+
+
+        if connection is None:
+
+            return jsonify({
+
+                "success": False,
+
+                "error":
+                    "Unable to connect to MySQL"
+
+            }), 500
+
+
+        cursor = connection.cursor(
+            dictionary=True
+        )
+
+
+        # ----------------------------------------------------
+        # CHECK STUDENT CREDENTIALS
+        # ----------------------------------------------------
+
+        cursor.execute(
+
+            """
+            SELECT
+                student_id,
+                student_name,
+                username
+            FROM students
+            WHERE username = %s
+            AND password = %s
+            LIMIT 1
+            """,
+
+            (
+                username,
+                password
+            )
+
+        )
+
+
+        student = cursor.fetchone()
+
+
+        # ----------------------------------------------------
+        # INVALID LOGIN
+        # ----------------------------------------------------
+
+        if student is None:
+
+            return jsonify({
+
+                "success": False,
+
+                "error":
+                    "Invalid username or password"
+
+            }), 401
+
+
+        # ----------------------------------------------------
+        # VALID LOGIN
+        # ----------------------------------------------------
+
+        return jsonify({
+
+            "success": True,
+
+            "message":
+                "Login successful",
+
+            "student": {
+
+                "student_id":
+                    student["student_id"],
+
+                "student_name":
+                    student["student_name"],
+
+                "username":
+                    student["username"]
+
+            }
+
+        }), 200
+
+
+    except mysql.connector.Error as error:
+
+        print(
+            "Student login MySQL error:",
+            error
+        )
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Database authentication error"
+
+        }), 500
+
+
+    except Exception as error:
+
+        print(
+            "Student login error:",
+            error
+        )
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                "Authentication failed"
+
+        }), 500
+
+
+    finally:
+
+        if cursor is not None:
+
+            cursor.close()
+
+
+        if connection is not None:
+
+            connection.close()
 # ============================================================
 # RUN SERVER
 # ============================================================

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+
 <html lang="en">
 
 <head>
@@ -823,34 +823,30 @@ async function loadExam() {
             "";
 
 
-        const durationMilliseconds =
-            Number(
-                exam.duration || 0
-            ) * 60 * 1000;
-
-
-        const examStartTime =
+        /*
+         * The examination timer must be based on the actual
+         * MySQL schedule, not on created_at.
+         *
+         * created_at only tells us when the teacher created
+         * the exam. scheduled_end is the real deadline.
+         */
+        const scheduledEndTime =
             new Date(
-                exam.created_at
+                exam.scheduled_end
             ).getTime();
 
 
         if (
             Number.isNaN(
-                examStartTime
+                scheduledEndTime
             )
         ) {
 
             throw new Error(
-                "Invalid exam start time."
+                "Invalid examination end time."
             );
 
         }
-
-
-        const elapsedMilliseconds =
-            Date.now() -
-            examStartTime;
 
 
         remainingSeconds =
@@ -858,11 +854,26 @@ async function loadExam() {
                 0,
                 Math.ceil(
                     (
-                        durationMilliseconds -
-                        elapsedMilliseconds
+                        scheduledEndTime -
+                        Date.now()
                     ) / 1000
                 )
             );
+
+
+        /*
+         * If the scheduled end time has already passed,
+         * do not allow the student to continue.
+         */
+        if (
+            remainingSeconds <= 0
+        ) {
+
+            throw new Error(
+                "This examination has ended."
+            );
+
+        }
 
 
         buildQuestionButtons();

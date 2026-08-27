@@ -602,16 +602,24 @@ const EXAM_ID =
     "{{ exam_id }}";
 
 
-/*
- * Temporary current student ID.
- *
- * We will replace this with the
- * verified login/session student ID
- * in the identity phase.
- */
+/* =========================================================
+   LOGGED-IN STUDENT ID
+========================================================= */
 
 const STUDENT_ID =
-    "STUDENT_001";
+    sessionStorage.getItem(
+        "student_id"
+    );
+
+
+if (
+    !STUDENT_ID
+) {
+
+    window.location.href =
+        "/login";
+
+}
 
 
 let cameraReady = false;
@@ -625,7 +633,15 @@ let aiReady = false;
 let examReady = false;
 
 
+function isAvailable(value) {
 
+    return (
+        value === true ||
+        value === 1 ||
+        value === "1"
+    );
+
+}
 /* =========================================================
    STATUS HELPER
 ========================================================= */
@@ -723,7 +739,9 @@ async function checkCamera() {
 
 
         if (
-            student.camera_available === true
+            isAvailable(
+                student.camera_available
+            )
         ) {
 
             cameraReady = true;
@@ -784,7 +802,9 @@ async function checkMicrophone() {
 
 
         if (
-            student.audio_available === true
+            isAvailable(
+                student.audio_available
+            )
         ) {
 
             microphoneReady = true;
@@ -891,7 +911,9 @@ async function checkAIMonitoring() {
          */
 
         if (
-            student.ai_available === true &&
+            isAvailable(
+                student.ai_available
+            ) &&
             String(
                 student.status || ""
             ).toUpperCase() === "ONLINE"

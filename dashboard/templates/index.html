@@ -15,6 +15,21 @@
 
     <script src="https://unpkg.com/lucide@latest"></script>
 
+<style>
+.proctify-modal{position:fixed;inset:0;z-index:9999;display:none;background:rgba(20,20,24,.42);backdrop-filter:blur(8px);padding:32px;overflow:auto}.proctify-modal.open{display:flex;align-items:flex-start;justify-content:center}.report-panel{width:min(1100px,96vw);margin:30px auto;background:rgba(255,255,255,.96);border:1px solid rgba(0,0,0,.08);border-radius:28px;padding:28px;box-shadow:0 30px 90px rgba(0,0,0,.18)}.report-head{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:24px}.report-head h2{margin:0;font-size:30px}.report-head p{margin:6px 0 0;color:#777}.report-close{border:0;background:#222;color:#fff;width:42px;height:42px;border-radius:50%;font-size:22px;cursor:pointer}.report-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:16px}.report-item{border:1px solid rgba(0,0,0,.08);border-radius:20px;padding:20px;background:#fff;box-shadow:0 8px 25px rgba(0,0,0,.05)}.report-item-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.report-student{font-weight:700;font-size:19px}.report-exam{color:#777;margin-top:5px}.risk-badge{padding:6px 10px;border-radius:999px;background:#f2f2f2;font-size:11px;font-weight:700}.report-metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0}.report-metric{background:#f7f7f7;border-radius:14px;padding:12px}.report-metric span{display:block;color:#777;font-size:11px}.report-metric strong{font-size:20px}.report-action{width:100%;border:0;border-radius:13px;padding:12px;background:#222;color:#fff;cursor:pointer;font-weight:700}.report-detail{display:none}.report-detail.open{display:block}.report-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}.detail-box{background:#f7f7f7;border-radius:16px;padding:14px}.detail-box span{display:block;color:#777;font-size:11px}.detail-box strong{font-size:20px}.detail-section{margin-top:24px}.detail-section h3{margin-bottom:10px}.violation-row{padding:13px;border-bottom:1px solid #eee}.violation-row:last-child{border-bottom:0}.evidence-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}.evidence-grid img{width:100%;height:140px;object-fit:cover;border-radius:12px;background:#eee}.empty-reports{padding:40px;text-align:center;color:#777}@media(max-width:700px){.proctify-modal{padding:12px}.report-panel{padding:18px}.report-summary{grid-template-columns:1fr 1fr}}
+
+
+/* =========================================================
+   STUDENT ENROLLMENT MODAL
+========================================================= */
+.enrollment-overlay{display:none;position:fixed;inset:0;z-index:10000;align-items:center;justify-content:center;padding:28px;background:rgba(18,20,24,.45);backdrop-filter:blur(10px)}
+.enrollment-overlay.show{display:flex}
+.enrollment-modal{width:min(980px,100%);max-height:90vh;overflow-y:auto;position:relative;padding:34px;border-radius:30px;background:#fafaf8;color:#222;box-shadow:0 28px 80px rgba(0,0,0,.22)}
+.enrollment-close{position:absolute;top:20px;right:20px;width:45px;height:45px;border:0;border-radius:50%;background:#262626;color:#fff;font-size:26px;cursor:pointer}
+.enrollment-header{display:flex;justify-content:space-between;gap:20px;margin-bottom:28px;padding-right:55px}.enrollment-header h2{margin:8px 0}.enrollment-header p{color:#6d737b}.enrollment-count{padding:15px 20px;border-radius:18px;background:rgba(210,229,227,.75);text-align:center}.enrollment-count strong{display:block;font-size:28px}.enrollment-count span{font-size:10px;letter-spacing:.15em}
+.enrollment-layout{display:grid;grid-template-columns:1fr 1fr;gap:22px}.enrollment-form,.enrolled-list-panel{padding:22px;border-radius:22px;background:#fff;border:1px solid rgba(0,0,0,.08)}.enrollment-form{display:grid;gap:14px}.enrollment-form label{display:grid;gap:7px;font-size:12px;font-weight:600}.enrollment-form input{width:100%;box-sizing:border-box;padding:13px;border-radius:12px;border:1px solid rgba(0,0,0,.15);font:inherit}.enroll-submit{display:flex;justify-content:space-between;padding:14px 18px;border:0;border-radius:14px;background:#262626;color:#fff;cursor:pointer;font-weight:bold}.enrollment-message{min-height:20px;font-size:13px}.enrollment-message.success{color:green}.enrollment-message.error{color:red}.enrolled-list{display:grid;gap:10px;max-height:400px;overflow-y:auto}.enrolled-student-row{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:12px;padding:12px;border-radius:16px;background:#f0f2f2}.enrolled-student-avatar{width:42px;height:42px;display:grid;place-items:center;border-radius:14px;background:#d0e2e0;font-weight:bold}.enrolled-student-main strong,.enrolled-student-main span{display:block}.enrolled-student-main span,.enrolled-student-id{font-size:11px;color:#777d85}.enrollment-empty{padding:30px;text-align:center;color:#777d85}@media(max-width:760px){.enrollment-overlay{padding:12px}.enrollment-modal{padding:24px 18px}.enrollment-layout{grid-template-columns:1fr}}
+
+</style>
 </head>
 
 
@@ -163,7 +178,9 @@
 
 
         <button class="sidebar-item"
-                title="Students">
+                title="Students"
+                type="button"
+                onclick="openEnrollment()">
 
             <i data-lucide="users"></i>
 
@@ -171,7 +188,8 @@
 
 
         <button class="sidebar-item"
-                title="Reports">
+                title="Reports"
+                onclick="openSubmissions()">
 
             <i data-lucide="bar-chart-3"></i>
 
@@ -1210,12 +1228,7 @@ function openMonitoring() {
    TEACHER / STUDENT MESSAGES
 ========================================================= */
 
-function openSubmissions() {
-
-    window.location.href =
-        "/submissions";
-
-}
+function openSubmissions() { openReports("Submissions"); }
 
 
 function openMessages() {
@@ -1225,6 +1238,101 @@ function openMessages() {
     );
 
 }
+
+/* =========================================================
+   REPORTS + COMPLETED SUBMISSIONS
+========================================================= */
+let cachedReports = [];
+
+function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
+}
+
+function openReports(title = "PROCTIFY Reports") {
+    const modal = document.getElementById("reportsModal");
+    if (!modal) return;
+    document.getElementById("reportsTitle").innerText = title;
+    document.getElementById("reportDetail").classList.remove("open");
+    document.getElementById("reportsList").style.display = "";
+    modal.classList.add("open");
+    loadReports();
+}
+
+function closeReports() {
+    document.getElementById("reportsModal")?.classList.remove("open");
+}
+
+async function loadReports() {
+    const list = document.getElementById("reportsList");
+    if (!list) return;
+    list.innerHTML = '<div class="empty-reports">Loading completed monitoring reports...</div>';
+    try {
+        const response = await fetch("/api/reports",{cache:"no-store"});
+        const data = await response.json();
+        if (!response.ok || !data || data.success !== true) throw new Error("Unable to load reports");
+        cachedReports = Array.isArray(data.reports) ? data.reports : [];
+        if (cachedReports.length === 0) {
+            list.innerHTML = '<div class="empty-reports">No completed PROCTIFY reports are available yet.</div>';
+            return;
+        }
+        list.innerHTML = cachedReports.map(report => {
+            const sid = escapeHtml(report.session_id || "");
+            const student = escapeHtml(report.student_id || "UNKNOWN");
+            const exam = escapeHtml(report.exam_name || "PROCTIFY EXAM");
+            const trust = Number(report.final_trust_score ?? 100);
+            const risk = escapeHtml(report.final_risk_level || "LOW");
+            const violations = Number(report.violation_count || 0);
+            const evidence = Number(report.evidence_count || 0);
+            return `<article class="report-item"><div class="report-item-top"><div><div class="report-student">${student}</div><div class="report-exam">${exam}</div></div><span class="risk-badge">${risk}</span></div><div class="report-metrics"><div class="report-metric"><span>TRUST SCORE</span><strong>${trust}</strong></div><div class="report-metric"><span>VIOLATIONS</span><strong>${violations}</strong></div><div class="report-metric"><span>EVIDENCE</span><strong>${evidence}</strong></div><div class="report-metric"><span>SESSION</span><strong style="font-size:12px">${sid}</strong></div></div><button class="report-action" data-session="${sid}">VIEW COMPLETE REPORT →</button></article>`;
+        }).join("");
+        list.querySelectorAll(".report-action[data-session]").forEach(button => {
+            button.addEventListener("click", () => openReportDetail(button.dataset.session));
+        });
+    } catch (error) {
+        console.log("Reports load error:", error);
+        list.innerHTML = '<div class="empty-reports">Unable to load reports right now.</div>';
+    }
+}
+
+async function openReportDetail(sessionId) {
+    const list = document.getElementById("reportsList");
+    const detail = document.getElementById("reportDetail");
+    if (!detail) return;
+    detail.innerHTML = '<div class="empty-reports">Loading complete report...</div>';
+    detail.classList.add("open");
+    if (list) list.style.display = "none";
+    try {
+        const response = await fetch("/api/reports/" + encodeURIComponent(sessionId), {cache:"no-store"});
+        const data = await response.json();
+        if (!response.ok || !data || data.success !== true || !data.report) throw new Error("Report not found");
+        const report = data.report;
+        const violations = Array.isArray(report.violations) ? report.violations : [];
+        const evidence = Array.isArray(report.evidence) ? report.evidence : [];
+        const violationHtml = violations.length ? violations.map(v => {
+            if (typeof v === "string") return `<div class="violation-row">${escapeHtml(v)}</div>`;
+            return `<div class="violation-row"><strong>${escapeHtml(v.violation_type || v.type || "VIOLATION")}</strong><div>${escapeHtml(v.description || "")}</div><small>${escapeHtml(v.timestamp || v.time || "")}</small></div>`;
+        }).join("") : '<div class="empty-reports">No violations were recorded.</div>';
+        const evidenceHtml = evidence.length ? evidence.map(item => {
+            const id = item && typeof item === "object" ? (item.id || item.evidence_id) : null;
+            return id ? `<div><img src="/api/evidence/${encodeURIComponent(id)}/image" alt="PROCTIFY evidence" loading="lazy" onerror="this.parentElement.innerHTML='<div class=violation-row>Evidence image unavailable</div>'"></div>` : '<div class="violation-row">Evidence recorded</div>';
+        }).join("") : '<div class="empty-reports">No evidence images were saved for this session.</div>';
+        detail.innerHTML = `<button class="report-action" onclick="backToReports()" style="max-width:180px;margin-bottom:18px">← BACK TO REPORTS</button><h2>${escapeHtml(report.student_id || "UNKNOWN")}</h2><p>${escapeHtml(report.exam_name || "PROCTIFY EXAM")}</p><div class="report-summary"><div class="detail-box"><span>FINAL TRUST</span><strong>${escapeHtml(report.final_trust_score ?? report.trust_score ?? 100)}</strong></div><div class="detail-box"><span>RISK LEVEL</span><strong>${escapeHtml(report.final_risk_level || report.risk_level || "LOW")}</strong></div><div class="detail-box"><span>VIOLATIONS</span><strong>${Number(report.total_violations ?? violations.length)}</strong></div><div class="detail-box"><span>EVIDENCE</span><strong>${Number(report.total_evidence ?? evidence.length)}</strong></div></div><div class="detail-section"><h3>Violation History</h3>${violationHtml}</div><div class="detail-section"><h3>Evidence</h3><div class="evidence-grid">${evidenceHtml}</div></div>`;
+    } catch (error) {
+        console.log("Report detail error:", error);
+        detail.innerHTML = '<button class="report-action" onclick="backToReports()" style="max-width:180px;margin-bottom:18px">← BACK TO REPORTS</button><div class="empty-reports">Unable to load this complete report.</div>';
+    }
+}
+
+function backToReports() {
+    document.getElementById("reportDetail")?.classList.remove("open");
+    const list = document.getElementById("reportsList");
+    if (list) list.style.display = "";
+}
+
+document.getElementById("reportsModal")?.addEventListener("click", event => {
+    if (event.target.id === "reportsModal") closeReports();
+});
+
 /* =========================================================
    UPDATE MONITORING HEALTH
 ========================================================= */
@@ -2227,14 +2335,12 @@ async function updateSubmissions() {
 
     try {
 
-        const response =
-            await fetch(
-                "/api/submissions",
-                {
-                    cache: "no-store"
-                }
-            );
-
+        const response = await fetch(
+            "/api/submissions",
+            {
+                cache: "no-store"
+            }
+        );
 
         if (!response.ok) {
 
@@ -2243,26 +2349,13 @@ async function updateSubmissions() {
             );
 
             return;
-
         }
 
-
-        const data =
-            await response.json();
-
-
-        if (
-            !data ||
-            data.success !== true
-        ) {
-
-            return;
-
-        }
+        const data = await response.json();
 
 
         /* -------------------------------------------------
-           SUBMITTED
+           TOTAL SUBMISSIONS
         ------------------------------------------------- */
 
         const submittedElement =
@@ -2270,12 +2363,12 @@ async function updateSubmissions() {
                 "submittedStudents"
             );
 
-
         if (submittedElement) {
 
             submittedElement.innerText =
-                data.submitted || 0;
-
+                Number(
+                    data.count || 0
+                );
         }
 
 
@@ -2288,12 +2381,12 @@ async function updateSubmissions() {
                 "evaluatedStudents"
             );
 
-
         if (evaluatedElement) {
 
             evaluatedElement.innerText =
-                data.evaluated || 0;
-
+                Number(
+                    data.evaluated || 0
+                );
         }
 
 
@@ -2306,27 +2399,26 @@ async function updateSubmissions() {
                 "pendingSubmissions"
             );
 
-
         if (pendingElement) {
 
             pendingElement.innerText =
-                data.pending || 0;
-
+                Number(
+                    data.pending || 0
+                );
         }
 
 
         console.log(
-            "PROCTIFY SUBMISSIONS:",
+            "PROCTIFY SQL SUBMISSIONS:",
             data
         );
 
     }
 
-
     catch (error) {
 
         console.log(
-            "Waiting for submission data...",
+            "Waiting for SQL submission data...",
             error
         );
 
@@ -2350,7 +2442,6 @@ async function updateDashboard() {
                 }
             );
 
-
         if (!response.ok) {
 
             console.log(
@@ -2358,36 +2449,27 @@ async function updateDashboard() {
             );
 
             return;
-
         }
-
 
         const data =
             await response.json();
-
-
-        /*
-         * IMPORTANT:
-         *
-         * Your Flask backend returns a single
-         * student object when only one student
-         * exists.
-         *
-         * extractStudents() handles that.
-         */
 
         const students =
             extractStudents(
                 data
             );
-        /* =====================================================
-   MONITORING HEALTH
-===================================================== */
 
-        updateMonitoringHealth(
-            students
-        );
-
+        /*
+         * Only ONLINE students belong to
+         * the Live Classroom and live monitoring UI.
+         */
+        const liveStudents =
+            students.filter(
+                student =>
+                    String(
+                        student.status || ""
+                    ).toUpperCase() === "ONLINE"
+            );
 
         /* =====================================================
            TOTAL STUDENTS
@@ -2396,48 +2478,34 @@ async function updateDashboard() {
         const totalStudents =
             students.length;
 
-
         const totalElement =
             document.getElementById(
                 "totalStudents"
             );
 
-
         if (totalElement) {
 
             totalElement.innerText =
                 totalStudents;
-
         }
-
 
         /* =====================================================
            ACTIVE STUDENTS
         ===================================================== */
 
         const activeStudents =
-            students.filter(
-                student =>
-                    String(
-                        student.status
-                    ).toUpperCase() ===
-                    "ONLINE"
-            ).length;
-
+            liveStudents.length;
 
         const activeElement =
             document.getElementById(
                 "activeStudents"
             );
 
-
         if (activeElement) {
 
             activeElement.innerText =
                 activeStudents;
-
         }
-
 
         /* =====================================================
            LIVE PULSE
@@ -2448,14 +2516,11 @@ async function updateDashboard() {
                 "pulseCount"
             );
 
-
         if (pulseElement) {
 
             pulseElement.innerText =
                 activeStudents;
-
         }
-
 
         /* =====================================================
            EXAM STUDENT COUNT
@@ -2466,14 +2531,11 @@ async function updateDashboard() {
                 "examStudentCount"
             );
 
-
         if (examCountElement) {
 
             examCountElement.innerText =
                 totalStudents;
-
         }
-
 
         /* =====================================================
            STUDENT CARDS
@@ -2484,45 +2546,24 @@ async function updateDashboard() {
                 ".student-card"
             );
 
-
         /*
-         * Hide unused design cards.
-         *
-         * The actual dashboard design remains unchanged.
+         * Always hide every design placeholder first.
+         * Only real ONLINE students will be shown.
          */
-
         cards.forEach(
-            (
-                card,
-                index
-            ) => {
+            card => {
 
-                if (
-                    index >=
-                    students.length
-                ) {
-
-                    card.style.display =
-                        "none";
-
-                }
-
-                else {
-
-                    card.style.display =
-                        "";
-
-                }
+                card.style.display =
+                    "none";
 
             }
         );
 
-
         /*
-         * Update cards using live backend data.
+         * Reuse the existing card design for
+         * each currently ONLINE student.
          */
-
-        students.forEach(
+        liveStudents.forEach(
             (
                 student,
                 index
@@ -2533,9 +2574,10 @@ async function updateDashboard() {
                 ) {
 
                     return;
-
                 }
 
+                cards[index].style.display =
+                    "";
 
                 updateStudentCard(
                     cards[index],
@@ -2544,54 +2586,30 @@ async function updateDashboard() {
 
             }
         );
+
+        if (
+            liveStudents.length === 0
+        ) {
+
+            currentStudentId =
+                null;
+        }
+
         /* =====================================================
-        MONITORING HEALTH
+           MONITORING HEALTH
         ===================================================== */
 
-        if (students.length > 0) {
-
-            /*
-            * Use the first currently online student
-            * as the live monitoring health source.
-            */
-
-/* =====================================================
-   MONITORING HEALTH — ALL ONLINE STUDENTS
-===================================================== */
-
-            const onlineStudents =
-                students.filter(
-                    student =>
-                        String(
-                            student.status || ""
-                        ).toUpperCase() === "ONLINE"
-                );
-
-            updateMonitoringHealth(
-                onlineStudents
-            );
-
-            updateMonitoringHealth(
-                liveStudent || null
-            );
-
-        }
-        else {
-
-            updateMonitoringHealth(
-                null
-            );
-
-        }
+        updateMonitoringHealth(
+            liveStudents
+        );
 
         /* =====================================================
            ATTENTION PANEL
         ===================================================== */
 
         updateAttentionPanel(
-            students
+            liveStudents
         );
-
 
         /* =====================================================
            MESSAGE COUNT
@@ -2608,28 +2626,24 @@ async function updateDashboard() {
                     "messageCount"
                 );
 
-
             if (messageCount) {
 
                 messageCount.innerText =
                     data.message_count;
-
             }
-
         }
-
-
-        /* =====================================================
-           DEBUG INFORMATION
-        ===================================================== */
 
         console.log(
             "PROCTIFY LIVE DATA:",
             students
         );
 
-    }
+        console.log(
+            "PROCTIFY ONLINE STUDENTS:",
+            liveStudents
+        );
 
+    }
 
     catch (error) {
 
@@ -2637,7 +2651,6 @@ async function updateDashboard() {
             "Waiting for live monitoring data...",
             error
         );
-
     }
 
 }
@@ -3450,10 +3463,587 @@ function openHostExam() {
         "/host-exam";
 
 }
+/* =========================================================
+   STUDENT ENROLLMENT
+========================================================= */
+
+function openEnrollment() {
+
+    const overlay =
+        document.getElementById(
+            "enrollmentOverlay"
+        );
+
+    if (!overlay) {
+        return;
+    }
+
+    overlay.classList.add(
+        "show"
+    );
+
+    loadEnrolledStudents();
+
+}
+
+
+function closeEnrollment() {
+
+    const overlay =
+        document.getElementById(
+            "enrollmentOverlay"
+        );
+
+    if (!overlay) {
+        return;
+    }
+
+    overlay.classList.remove(
+        "show"
+    );
+
+}
+
+
+function escapeEnrollmentHtml(value) {
+
+    return String(
+        value ?? ""
+    ).replace(
+        /[&<>"']/g,
+        function(character) {
+
+            return {
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#039;"
+            }[character];
+
+        }
+    );
+
+}
+
+
+/* =========================================================
+   LOAD ENROLLED STUDENTS FROM MYSQL
+========================================================= */
+
+async function loadEnrolledStudents() {
+
+    const list =
+        document.getElementById(
+            "enrolledStudentsList"
+        );
+
+    const count =
+        document.getElementById(
+            "enrolledStudentCount"
+        );
+
+    if (!list) {
+        return;
+    }
+
+    list.innerHTML = `
+        <div class="enrollment-empty">
+            Loading students...
+        </div>
+    `;
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/enrolled-students",
+                {
+                    cache: "no-store"
+                }
+            );
+
+        const data =
+            await response.json();
+
+
+        if (
+            !response.ok ||
+            data.success === false
+        ) {
+
+            throw new Error(
+                data.error ||
+                "Unable to load students."
+            );
+
+        }
+
+
+        const students =
+            Array.isArray(data.students)
+                ? data.students
+                : [];
+
+
+        if (count) {
+
+            count.innerText =
+                data.count !== undefined
+                    ? data.count
+                    : students.length;
+
+        }
+
+
+        if (students.length === 0) {
+
+            list.innerHTML = `
+                <div class="enrollment-empty">
+                    No students enrolled yet.
+                </div>
+            `;
+
+            return;
+
+        }
+
+
+        list.innerHTML =
+            students.map(
+                function(student) {
+
+                    const studentName =
+                        student.student_name ||
+                        student.name ||
+                        student.student_id ||
+                        "Student";
+
+
+                    const studentId =
+                        student.student_id ||
+                        "UNKNOWN";
+
+
+                    const username =
+                        student.username ||
+                        "";
+
+
+                    const initial =
+                        String(
+                            studentName
+                        )
+                        .trim()
+                        .charAt(0)
+                        .toUpperCase() ||
+                        "S";
+
+
+                    return `
+
+                        <div class="enrolled-student-row">
+
+                            <div class="enrolled-student-avatar">
+                                ${escapeEnrollmentHtml(initial)}
+                            </div>
+
+                            <div class="enrolled-student-main">
+
+                                <strong>
+                                    ${escapeEnrollmentHtml(studentName)}
+                                </strong>
+
+                                <span>
+                                    ${escapeEnrollmentHtml(username)}
+                                </span>
+
+                            </div>
+
+                            <div class="enrolled-student-id">
+                                ${escapeEnrollmentHtml(studentId)}
+                            </div>
+
+                        </div>
+
+                    `;
+
+                }
+            ).join("");
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Unable to load enrolled students:",
+            error
+        );
+
+        list.innerHTML = `
+            <div class="enrollment-empty">
+                Unable to load enrolled students.
+            </div>
+        `;
+
+    }
+
+}
+
+
+/* =========================================================
+   ENROLL STUDENT
+========================================================= */
+
+async function submitEnrollment(event) {
+
+    event.preventDefault();
+
+
+    const message =
+        document.getElementById(
+            "enrollmentMessage"
+        );
+
+
+    const submitButton =
+        document.getElementById(
+            "enrollSubmitButton"
+        );
+
+
+    const payload = {
+
+        student_id:
+            document.getElementById(
+                "enrollStudentId"
+            ).value.trim(),
+
+        student_name:
+            document.getElementById(
+                "enrollStudentName"
+            ).value.trim(),
+
+        username:
+            document.getElementById(
+                "enrollUsername"
+            ).value.trim(),
+
+        password:
+            document.getElementById(
+                "enrollPassword"
+            ).value
+
+    };
+
+
+    if (message) {
+
+        message.className =
+            "enrollment-message";
+
+        message.innerText = "";
+
+    }
+
+
+    if (submitButton) {
+
+        submitButton.disabled = true;
+
+        submitButton.innerText =
+            "Enrolling...";
+
+    }
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/students/enroll",
+                {
+
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body:
+                        JSON.stringify(payload)
+
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            !response.ok ||
+            data.success === false
+        ) {
+
+            throw new Error(
+                data.error ||
+                data.message ||
+                "Unable to enroll student."
+            );
+
+        }
+
+
+        if (message) {
+
+            message.className =
+                "enrollment-message success";
+
+            message.innerText =
+                data.message ||
+                "Student enrolled successfully.";
+
+        }
+
+
+        const form =
+            document.getElementById(
+                "enrollmentForm"
+            );
+
+
+        if (form) {
+
+            form.reset();
+
+        }
+
+
+        await loadEnrolledStudents();
+
+
+        /* Refresh existing dashboard */
+
+        if (
+            typeof updateDashboard === "function"
+        ) {
+
+            updateDashboard();
+
+        }
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Student enrollment error:",
+            error
+        );
+
+
+        if (message) {
+
+            message.className =
+                "enrollment-message error";
+
+            message.innerText =
+                error.message;
+
+        }
+
+    }
+
+    finally {
+
+        if (submitButton) {
+
+            submitButton.disabled = false;
+
+            submitButton.innerHTML = `
+                <span>
+                    Enroll Student
+                </span>
+
+                <span>
+                    →
+                </span>
+            `;
+
+        }
+
+    }
+
+}
+
+
+/* =========================================================
+   ENROLLMENT EVENT LISTENERS
+========================================================= */
+
+document.addEventListener(
+    "DOMContentLoaded",
+    function() {
+
+        const enrollmentForm =
+            document.getElementById(
+                "enrollmentForm"
+            );
+
+
+        if (enrollmentForm) {
+
+            enrollmentForm.addEventListener(
+                "submit",
+                submitEnrollment
+            );
+
+        }
+
+
+        const enrollmentOverlay =
+            document.getElementById(
+                "enrollmentOverlay"
+            );
+
+
+        if (enrollmentOverlay) {
+
+            enrollmentOverlay.addEventListener(
+                "click",
+                function(event) {
+
+                    if (
+                        event.target ===
+                        enrollmentOverlay
+                    ) {
+
+                        closeEnrollment();
+
+                    }
+
+                }
+            );
+
+        }
+
+    }
+);
 
 </script>
 
 
-</body>
 
+
+<!-- =========================================================
+     STUDENT ENROLLMENT MODAL
+========================================================= -->
+<div id="enrollmentOverlay" class="enrollment-overlay">
+    <div class="enrollment-modal">
+        <button type="button" class="enrollment-close" onclick="closeEnrollment()">×</button>
+        <div class="enrollment-header">
+            <div>
+                <div class="eyebrow">STUDENT MANAGEMENT</div>
+                <h2>Enroll Students</h2>
+                <p>Create and manage student accounts.</p>
+            </div>
+            <div class="enrollment-count">
+                <strong id="enrolledStudentCount">0</strong>
+                <span>ENROLLED</span>
+            </div>
+        </div>
+        <div class="enrollment-layout">
+            <form id="enrollmentForm" class="enrollment-form">
+                <label>Student ID<input type="text" id="enrollStudentId" placeholder="STUDENT_001" required></label>
+                <label>Student Name<input type="text" id="enrollStudentName" placeholder="Enter student name" required></label>
+                <label>Username<input type="text" id="enrollUsername" placeholder="Enter username" required></label>
+                <label>Password<input type="password" id="enrollPassword" placeholder="Create password" required></label>
+                <button type="submit" id="enrollSubmitButton" class="enroll-submit"><span>Enroll Student</span><span>→</span></button>
+                <div id="enrollmentMessage" class="enrollment-message"></div>
+            </form>
+            <div class="enrolled-list-panel">
+                <div class="enrolled-list-header">
+                    <span>ENROLLED STUDENTS</span>
+                    <button type="button" onclick="loadEnrolledStudents()">Refresh</button>
+                </div>
+                <div id="enrolledStudentsList" class="enrolled-list">
+                    <div class="enrollment-empty">Loading students...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="proctify-modal" id="reportsModal"><div class="report-panel"><div class="report-head"><div><h2 id="reportsTitle">PROCTIFY Reports</h2><p id="reportsSubtitle">Completed examination monitoring sessions</p></div><button class="report-close" onclick="closeReports()" aria-label="Close">×</button></div><div id="reportsList" class="report-list"></div><div id="reportDetail" class="report-detail"></div></div></div>
+<script>
+
+/* =========================================
+   STUDENT ENROLLMENT - CLICK HANDLER
+========================================= */
+
+document.addEventListener(
+    "DOMContentLoaded",
+    function () {
+
+        const studentButton =
+            document.querySelector(
+                '.sidebar-item[title="Students"]'
+            );
+
+        if (studentButton) {
+
+            studentButton.addEventListener(
+                "click",
+                function () {
+
+                    const overlay =
+                        document.getElementById(
+                            "enrollmentOverlay"
+                        );
+
+                    if (overlay) {
+
+                        overlay.classList.add(
+                            "show"
+                        );
+
+                        console.log(
+                            "Student enrollment opened"
+                        );
+
+                        if (
+                            typeof loadEnrolledStudents ===
+                            "function"
+                        ) {
+
+                            loadEnrolledStudents();
+
+                        }
+
+                    } else {
+
+                        console.error(
+                            "enrollmentOverlay not found"
+                        );
+
+                    }
+
+                }
+            );
+
+        } else {
+
+            console.error(
+                "Students sidebar button not found"
+            );
+
+        }
+
+    }
+);
+
+</script>
+</body>
 </html>
