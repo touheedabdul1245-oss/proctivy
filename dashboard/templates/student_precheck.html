@@ -1222,6 +1222,10 @@ function continueToExam() {
 
 runChecks();
 
+// The monitor starts automatically when this precheck page opens.
+// Keep checking while camera, microphone and AI are starting.
+setInterval(runChecks, 2000);
+
 
 </script>
 

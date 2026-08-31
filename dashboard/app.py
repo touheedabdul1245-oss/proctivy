@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, session, redirect
 import mysql.connector
 import json
 import os
@@ -6,6 +6,8 @@ import base64
 import numpy as np
 import cv2
 import mediapipe as mp
+import subprocess
+import sys
 from datetime import datetime, timedelta
 
 
@@ -14,6 +16,7 @@ from datetime import datetime, timedelta
 # ============================================================
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("PROCTIFY_SECRET_KEY", "proctify-dev-secret-key")
 
 # ============================================================
 # MYSQL CONFIGURATION
@@ -77,6 +80,14 @@ EXAMS_FILE = os.path.join(
     "shared_data",
     "exams.json"
 )
+
+LIVE_MONITOR_FILE = os.path.join(
+    BASE_DIR,
+    "detectors",
+    "live_monitor.py"
+)
+
+monitor_processes = {}
 
 
 # ============================================================
@@ -957,9 +968,16 @@ def exam_details(exam_id):
 @app.route("/student")
 def student_dashboard():
 
+    if not session.get("student_id"):
+        return redirect("/")
+
     return render_template(
-        "student_dashboard.html"
+        "student_dashboard.html",
+        student_id=session.get("student_id"),
+        student_name=session.get("student_name", "")
     )
+
+
 # ============================================================
 # STUDENT FACE VERIFICATION
 # ============================================================
@@ -967,9 +985,54 @@ def student_dashboard():
 @app.route("/student/verify")
 def student_verify():
 
-    return render_template(
-        "student_verify.html"
-    )
+    if not session.get("student_id"):
+        return redirect("/")
+
+    return render_template("student_verify.html")
+
+
+# ============================================================
+# START LIVE MONITOR
+# ============================================================
+
+def start_live_monitor(student_id, exam_id, exam_name):
+
+    process = monitor_processes.get(student_id)
+
+    if process is not None and process.poll() is None:
+        return True, "Monitoring is already running"
+
+    if not os.path.exists(LIVE_MONITOR_FILE):
+        return False, "live_monitor.py was not found"
+
+    session_id = f"SESSION_{int(datetime.now().timestamp())}"
+
+    try:
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                LIVE_MONITOR_FILE,
+                str(student_id),
+                str(session_id),
+                str(exam_name)
+            ],
+            cwd=BASE_DIR
+        )
+
+        monitor_processes[student_id] = process
+
+        print(
+            f"Started monitor for {student_id} | "
+            f"Exam: {exam_name} | Session: {session_id}"
+        )
+
+        return True, session_id
+
+    except Exception as error:
+        print("Live monitor start error:", error)
+        return False, str(error)
+
+
 # ============================================================
 # STUDENT PRE-EXAM SYSTEM CHECK
 # ============================================================
@@ -980,10 +1043,60 @@ def student_verify():
 )
 def student_precheck(exam_id):
 
-    return render_template(
-        "student_precheck.html",
-        exam_id=exam_id
-    )
+    student_id = session.get("student_id")
+
+    if not student_id:
+        return redirect("/")
+
+    connection = None
+    cursor = None
+
+    try:
+        connection = get_database_connection()
+
+        if connection is None:
+            return "Unable to connect to MySQL", 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute(
+            """
+            SELECT exam_id, exam_name
+            FROM exams
+            WHERE exam_id = %s
+            LIMIT 1
+            """,
+            (exam_id,)
+        )
+
+        exam = cursor.fetchone()
+
+        if exam is None:
+            return "Exam not found", 404
+
+        success, result = start_live_monitor(
+            str(student_id),
+            str(exam["exam_id"]),
+            str(exam["exam_name"])
+        )
+
+        if not success:
+            return f"Unable to start monitoring: {result}", 500
+
+        return render_template(
+            "student_precheck.html",
+            exam_id=exam_id,
+            student_id=student_id
+        )
+
+    finally:
+        if cursor is not None:
+            cursor.close()
+
+        if connection is not None:
+            connection.close()
+
+
 # ============================================================
 # STUDENT EXAM PAGE
 # ============================================================
@@ -994,10 +1107,55 @@ def student_precheck(exam_id):
 )
 def student_exam(exam_id):
 
+    if not session.get("student_id"):
+        return redirect("/")
+
     return render_template(
         "student_exam.html",
-        exam_id=exam_id
+        exam_id=exam_id,
+        student_id=session.get("student_id")
     )
+
+
+# ============================================================
+# CURRENT LOGGED-IN STUDENT LIVE STATUS
+# ============================================================
+
+@app.route(
+    "/api/student/live/current",
+    methods=["GET"]
+)
+def api_student_live_current():
+
+    student_id = session.get("student_id")
+
+    if not student_id:
+        return jsonify({
+            "success": False,
+            "error": "Student is not logged in"
+        }), 401
+
+    data = load_live_data()
+
+    for student in data.get("students", []):
+        if str(student.get("student_id", "")) == str(student_id):
+            return jsonify({
+                "success": True,
+                "student": student
+            })
+
+    return jsonify({
+        "success": True,
+        "student": {
+            "student_id": str(student_id),
+            "status": "STARTING",
+            "camera_available": False,
+            "audio_available": False,
+            "ai_available": False
+        }
+    })
+
+
 # ============================================================
 # API - ALL STUDENTS
 # ============================================================
@@ -1005,25 +1163,61 @@ def student_exam(exam_id):
 @app.route("/api/students")
 def api_students():
 
-    students = get_students()
+    # Host Exam needs the students enrolled by the teacher,
+    # not only students currently present in live monitoring.
+    connection = None
+    cursor = None
 
-    students = [
-        normalize_student(student)
-        for student in students
-    ]
+    try:
+        connection = get_database_connection()
 
-    return jsonify({
+        if connection is None:
+            return jsonify({
+                "success": False,
+                "error": "Unable to connect to MySQL",
+                "count": 0,
+                "students": []
+            }), 500
 
-        "success": True,
+        cursor = connection.cursor(dictionary=True)
 
-        "count": len(
-            students
-        ),
+        cursor.execute(
+            """
+            SELECT
+                student_id,
+                student_name,
+                username
+            FROM students
+            ORDER BY created_at DESC
+            """
+        )
 
-        "students": students
+        students = cursor.fetchall()
 
-    })
+        return jsonify({
+            "success": True,
+            "count": len(students),
+            "students": students
+        })
 
+    except Exception as error:
+
+        print("Student list error:", error)
+
+        return jsonify({
+            "success": False,
+            "error": str(error),
+            "count": 0,
+            "students": []
+        }), 500
+
+    finally:
+
+        if cursor is not None:
+            cursor.close()
+
+        if connection is not None:
+            connection.close()
 
 # ============================================================
 # ============================================================
@@ -1647,6 +1841,20 @@ def create_exam():
             []
         )
 
+        selected_students = data.get(
+            "selected_students",
+            []
+        )
+
+        if not isinstance(selected_students, list):
+            selected_students = []
+
+        selected_students = [
+            str(student_id).strip()
+            for student_id in selected_students
+            if str(student_id).strip()
+        ]
+
         scheduled_start = str(
             data.get(
                 "scheduled_start",
@@ -1696,6 +1904,13 @@ def create_exam():
             return jsonify({
                 "success": False,
                 "error": "At least one question is required"
+            }), 400
+
+        if not selected_students:
+
+            return jsonify({
+                "success": False,
+                "error": "At least one student must be assigned"
             }), 400
 
 
@@ -1814,6 +2029,9 @@ def create_exam():
             "status":
                 exam_status,
 
+            "assigned_students":
+                selected_students,
+
             "created_at":
                 datetime.now().isoformat()
 
@@ -1922,6 +2140,33 @@ def create_exam():
 
         )
 
+        # ----------------------------------------------------
+        # SAVE EXAM -> STUDENT ASSIGNMENTS
+        # ----------------------------------------------------
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS exam_assignments (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                exam_id VARCHAR(100) NOT NULL,
+                student_id VARCHAR(100) NOT NULL,
+                assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_exam_student (exam_id, student_id)
+            )
+            """
+        )
+
+        assignment_query = """
+            INSERT IGNORE INTO exam_assignments
+                (exam_id, student_id)
+            VALUES (%s, %s)
+        """
+
+        for student_id in selected_students:
+            cursor.execute(
+                assignment_query,
+                (exam_id, student_id)
+            )
 
         connection.commit()
 
@@ -2148,42 +2393,68 @@ def get_exams():
         # GET ONLY NON-EXPIRED EXAMS
         # ----------------------------------------------------
 
-        select_query = """
+        student_id = session.get("student_id")
 
-            SELECT
+        if student_id:
 
-                exam_id,
+            # Student sees only exams assigned to their MySQL student_id.
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS exam_assignments (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    exam_id VARCHAR(100) NOT NULL,
+                    student_id VARCHAR(100) NOT NULL,
+                    assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY unique_exam_student (exam_id, student_id)
+                )
+                """
+            )
 
-                exam_name,
+            select_query = """
+                SELECT
+                    e.exam_id,
+                    e.exam_name,
+                    e.subject,
+                    e.duration,
+                    e.questions,
+                    e.question_count,
+                    e.scheduled_start,
+                    e.scheduled_end,
+                    e.status,
+                    e.created_at
+                FROM exams e
+                INNER JOIN exam_assignments a
+                    ON a.exam_id = e.exam_id
+                WHERE a.student_id = %s
+                  AND e.status != 'EXPIRED'
+                ORDER BY e.created_at DESC
+            """
 
-                subject,
+            cursor.execute(
+                select_query,
+                (str(student_id),)
+            )
 
-                duration,
+        else:
 
-                questions,
+            select_query = """
+                SELECT
+                    exam_id,
+                    exam_name,
+                    subject,
+                    duration,
+                    questions,
+                    question_count,
+                    scheduled_start,
+                    scheduled_end,
+                    status,
+                    created_at
+                FROM exams
+                WHERE status != 'EXPIRED'
+                ORDER BY created_at DESC
+            """
 
-                question_count,
-
-                scheduled_start,
-
-                scheduled_end,
-
-                status,
-
-                created_at
-
-            FROM exams
-
-            WHERE status != 'EXPIRED'
-
-            ORDER BY created_at DESC
-
-        """
-
-
-        cursor.execute(
-            select_query
-        )
+            cursor.execute(select_query)
 
 
         exams = cursor.fetchall()
@@ -4081,6 +4352,10 @@ def student_login():
         # ----------------------------------------------------
         # VALID LOGIN
         # ----------------------------------------------------
+
+        session["student_id"] = str(student["student_id"])
+        session["student_name"] = str(student["student_name"])
+        session["username"] = str(student["username"])
 
         return jsonify({
 

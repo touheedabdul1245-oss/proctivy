@@ -376,7 +376,9 @@
 <section class="overview">
 
 
-    <div class="stat-card mint">
+    <div class="stat-card mint"
+         onclick="openEnrollment()"
+         style="cursor:pointer;">
 
         <div class="card-label">
             STUDENTS
@@ -2427,6 +2429,41 @@ async function updateSubmissions() {
 }
 
 /* =========================================================
+   UPDATE ENROLLED STUDENT COUNT
+========================================================= */
+
+async function updateEnrolledStudentCount() {
+
+    try {
+
+        const response = await fetch(
+            "/api/enrolled-students",
+            { cache: "no-store" }
+        );
+
+        if (!response.ok) return;
+
+        const data = await response.json();
+
+        const totalElement =
+            document.getElementById("totalStudents");
+
+        if (totalElement) {
+            totalElement.innerText =
+                Number(data.count || 0);
+        }
+
+    } catch (error) {
+
+        console.log(
+            "Unable to load enrolled student count:",
+            error
+        );
+    }
+}
+
+
+/* =========================================================
    UPDATE MAIN DASHBOARD
 ========================================================= */
 
@@ -2478,16 +2515,8 @@ async function updateDashboard() {
         const totalStudents =
             students.length;
 
-        const totalElement =
-            document.getElementById(
-                "totalStudents"
-            );
-
-        if (totalElement) {
-
-            totalElement.innerText =
-                totalStudents;
-        }
+        // totalStudents card is controlled by MySQL enrolled students.
+        // Live students are used only for ACTIVE/live monitoring.
 
         /* =====================================================
            ACTIVE STUDENTS
@@ -3437,6 +3466,7 @@ updateCurrentExam();
 
 updateDashboard();
 updateSubmissions();
+updateEnrolledStudentCount();
 
 
 /*
@@ -3449,6 +3479,10 @@ setInterval(
 );
 setInterval(
     updateSubmissions,
+    2000
+);
+setInterval(
+    updateEnrolledStudentCount,
     2000
 );
 

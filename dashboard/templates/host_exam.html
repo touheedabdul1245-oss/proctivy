@@ -927,7 +927,7 @@ async function startExam() {
     const examData = {
 
         exam_name:
-            examName,
+            title,
 
         subject:
             subject,
@@ -985,14 +985,18 @@ async function startExam() {
         if (result.success) {
 
             alert(
-                "Exam created successfully!\n\nExam ID: " +
-                result.exam.exam_id
+                "Exam hosted successfully!\n\nExam ID: " +
+                result.exam.exam_id +
+                "\nAssigned students: " +
+                selectedStudents.length
             );
 
             console.log(
                 "PROCTIFY EXAM:",
                 result.exam
             );
+
+            window.location.href = "/teacher";
 
         }
 

@@ -34,30 +34,16 @@ frame_lock = threading.Lock()
 # STUDENT / SESSION INFORMATION
 # ============================================================
 
-# Usage:
-#
-# python live_monitor.py STUDENT_ID SESSION_ID EXAM_NAME
-#
-# Example:
-#
-# python live_monitor.py STU001 SESSION001 "Python Exam"
-#
-# If no arguments are supplied, test values are used.
+# These values are supplied automatically by dashboard/app.py.
+# You do not type them manually in the terminal.
 
-if len(sys.argv) >= 2:
-    STUDENT_ID = sys.argv[1]
-else:
-    STUDENT_ID = "STUDENT_001"
+if len(sys.argv) < 4:
+    print("ERROR: live_monitor.py must be started by PROCTIFY dashboard.")
+    sys.exit(1)
 
-if len(sys.argv) >= 3:
-    SESSION_ID = sys.argv[2]
-else:
-    SESSION_ID = f"SESSION_{int(time.time())}"
-
-if len(sys.argv) >= 4:
-    EXAM_NAME = " ".join(sys.argv[3:])
-else:
-    EXAM_NAME = "PROCTIFY EXAM"
+STUDENT_ID = str(sys.argv[1]).strip()
+SESSION_ID = str(sys.argv[2]).strip()
+EXAM_NAME = " ".join(sys.argv[3:]).strip()
 
 
 print()
@@ -71,6 +57,7 @@ print("========================================")
 print()
 
 
+# ============================================================
 # ============================================================
 # PATHS
 # ============================================================
