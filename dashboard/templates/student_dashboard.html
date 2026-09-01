@@ -493,7 +493,7 @@ async function loadStudentExams() {
 
         const response =
             await fetch(
-                "/api/student/exams",
+                "/api/exams",
                 {
                     cache: "no-store"
                 }
@@ -924,6 +924,7 @@ setInterval(
 * logged-in student that are currently ACTIVE.
 *
 * Expired exams automatically disappear from this page.
+ */
 setInterval(
     loadStudentExams,
     10000

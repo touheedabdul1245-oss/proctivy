@@ -1,16 +1,39 @@
 import cv2
 import os
+
+os.environ.pop("WERKZEUG_SERVER_FD", None)
+
+import sys
+
+# ============================================================
+# ADD PROJECT ROOT TO PYTHON PATH
+# ============================================================
+
+CURRENT_DIR = os.path.dirname(
+    os.path.abspath(__file__)
+)
+
+BASE_DIR = os.path.dirname(
+    CURRENT_DIR
+)
+
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+
 import uuid
 import time
 import threading
 import numpy as np
 from flask import Flask, Response
+from werkzeug.serving import make_server
 import sounddevice as sd
 import mediapipe as mp
 import json
-import sys
+
 import re
 from ultralytics import YOLO
+
 from monitoring.monitoring_engine import MonitoringEngine
 
 # ============================================================
@@ -1324,22 +1347,30 @@ def start_video_server():
         f" http://127.0.0.1:{video_port}/video_feed"
     )
 
+    try:
 
-    video_app.run(
+        server = make_server(
+            "127.0.0.1",
+            video_port,
+            video_app,
+            threaded=True
+        )
 
-        host="127.0.0.1",
+        print(
+            "Live video stream available at:"
+        )
 
-        port=video_port,
+        print(
+            "Student-specific video port is assigned automatically."
+        )
 
-        debug=False,
+        server.serve_forever()
 
-        threaded=True,
+    except Exception as e:
 
-        use_reloader=False
-
-    )
-
-
+        print(
+            f"ERROR: Student video server failed: {e}"
+        )
 video_server_thread = threading.Thread(
     target=start_video_server,
     daemon=True

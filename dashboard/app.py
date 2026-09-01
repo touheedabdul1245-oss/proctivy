@@ -1117,10 +1117,6 @@ def student_exam(exam_id):
     )
 
 
-# ============================================================
-# CURRENT LOGGED-IN STUDENT LIVE STATUS
-# ============================================================
-
 @app.route(
     "/api/student/live/current",
     methods=["GET"]
@@ -1135,27 +1131,48 @@ def api_student_live_current():
             "error": "Student is not logged in"
         }), 401
 
-    data = load_live_data()
+    try:
 
-    for student in data.get("students", []):
-        if str(student.get("student_id", "")) == str(student_id):
-            return jsonify({
-                "success": True,
-                "student": student
-            })
+        students = get_students_from_database()
 
-    return jsonify({
-        "success": True,
-        "student": {
-            "student_id": str(student_id),
-            "status": "STARTING",
-            "camera_available": False,
-            "audio_available": False,
-            "ai_available": False
-        }
-    })
+        for student in students:
 
+            if str(
+                student.get("student_id", "")
+            ) == str(student_id):
 
+                student = normalize_student(
+                    student
+                )
+
+                return jsonify({
+                    "success": True,
+                    "student": student
+                })
+
+        return jsonify({
+            "success": True,
+            "student": {
+                "student_id": str(student_id),
+                "status": "STARTING",
+                "camera_available": False,
+                "audio_available": False,
+                "ai_available": False,
+                "tab_available": True
+            }
+        })
+
+    except Exception as error:
+
+        print(
+            "Student live status error:",
+            error
+        )
+
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 500
 # ============================================================
 # API - ALL STUDENTS
 # ============================================================
@@ -2293,6 +2310,10 @@ def create_exam():
 
 @app.route(
     "/api/exams",
+    methods=["GET"]
+)
+@app.route(
+    "/api/student/exams",
     methods=["GET"]
 )
 def get_exams():
