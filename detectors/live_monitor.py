@@ -1350,7 +1350,7 @@ def start_video_server():
     try:
 
         server = make_server(
-            "127.0.0.1",
+            "0.0.0.0",
             video_port,
             video_app,
             threaded=True
