@@ -1,0 +1,10 @@
+path: C:/Users/touhe/PROCTIFY_V2/dataset_phone_earphone
+
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 2
+names:
+  0: phone
+  1: earphone

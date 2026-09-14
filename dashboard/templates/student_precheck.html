@@ -609,6 +609,15 @@ const EXAM_ID =
 const STUDENT_ID =
     "{{ student_id }}";
 
+const SESSION_ID =
+    "{{ session_id }}";
+
+const EXAM_NAME =
+    {{ exam_name|tojson }};
+
+const STUDENT_AGENT_URL =
+    "{{ student_agent_url }}";
+
 
 let cameraReady = false;
 
@@ -619,6 +628,8 @@ let tabReady = false;
 let aiReady = false;
 
 let examReady = false;
+let monitorStarted = false;
+let agentData = null;
 
 
 function isAvailable(value) {
@@ -665,41 +676,157 @@ function setStatus(
 async function getStudentMonitoringData() {
 
     const response =
-            await fetch(
-                "/api/student/live/current",
-                {
-                    cache: "no-store"
-                }
-            );
-
+        await fetch(
+            STUDENT_AGENT_URL + "/status",
+            {
+                method: "GET",
+                cache: "no-store"
+            }
+        );
 
     if (!response.ok) {
 
         throw new Error(
-            "Monitoring data unavailable."
+            "PROCTIFY Agent is unavailable."
         );
     }
-
 
     const data =
         await response.json();
 
-
-    if (
-        !data ||
-        !data.success ||
-        !data.student
-    ) {
+    if (!data || data.success === false) {
 
         throw new Error(
-            "Invalid monitoring response."
+            "Invalid PROCTIFY Agent response."
         );
     }
 
+    agentData =
+        data.monitor ||
+        data;
 
-    return data.student;
+    return agentData;
 }
 
+
+/* =========================================================
+   START LOCAL PROCTIFY AGENT
+========================================================= */
+
+async function startStudentAgent() {
+
+    if (monitorStarted) {
+        return true;
+    }
+
+    setStatus(
+        "aiStatus",
+        "checking",
+        "Starting..."
+    );
+
+    setStatus(
+        "cameraStatus",
+        "checking",
+        "Starting..."
+    );
+
+    setStatus(
+        "microphoneStatus",
+        "checking",
+        "Starting..."
+    );
+
+    try {
+
+        const response =
+            await fetch(
+                STUDENT_AGENT_URL + "/start",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+                    body: JSON.stringify({
+                        student_id:
+                            String(STUDENT_ID),
+
+                        session_id:
+                            String(SESSION_ID),
+
+                        exam_name:
+                            String(EXAM_NAME)
+                    })
+                }
+            );
+
+        if (!response.ok) {
+
+            throw new Error(
+                "Agent start request failed."
+            );
+        }
+
+        const data =
+            await response.json();
+
+        if (
+            !data ||
+            data.success !== true
+        ) {
+
+            throw new Error(
+                data && data.error
+                    ? data.error
+                    : "Agent could not start monitoring."
+            );
+        }
+
+        monitorStarted = true;
+
+        document.getElementById(
+            "message"
+        ).innerText =
+            "PROCTIFY AI monitoring is starting. Please wait...";
+
+        return true;
+
+    } catch (error) {
+
+        console.error(
+            "Student agent start error:",
+            error
+        );
+
+        monitorStarted = false;
+
+        setStatus(
+            "aiStatus",
+            "failed",
+            "✕ Agent Offline"
+        );
+
+        setStatus(
+            "cameraStatus",
+            "failed",
+            "✕ Not Active"
+        );
+
+        setStatus(
+            "microphoneStatus",
+            "failed",
+            "✕ Not Active"
+        );
+
+        document.getElementById(
+            "message"
+        ).innerText =
+            "PROCTIFY Agent is not running on this computer. Start the student agent and retry.";
+
+        return false;
+    }
+}
 
 
 /* =========================================================
@@ -710,18 +837,8 @@ async function checkCamera() {
 
     try {
 
-        /*
-         * IMPORTANT:
-         *
-         * We DO NOT call getUserMedia().
-         *
-         * The existing live_monitor.py process
-         * already owns the webcam.
-         */
-
         const student =
             await getStudentMonitoringData();
-
 
         if (
             isAvailable(
@@ -740,20 +857,17 @@ async function checkCamera() {
             return true;
         }
 
-
         cameraReady = false;
 
         setStatus(
             "cameraStatus",
-            "failed",
-            "✕ Not Active"
+            "checking",
+            "Waiting..."
         );
 
         return false;
 
-    }
-
-    catch (error) {
+    } catch (error) {
 
         console.error(
             "Camera check:",
@@ -764,14 +878,17 @@ async function checkCamera() {
 
         setStatus(
             "cameraStatus",
-            "failed",
-            "✕ Unavailable"
+            monitorStarted
+                ? "checking"
+                : "failed",
+            monitorStarted
+                ? "Waiting..."
+                : "✕ Unavailable"
         );
 
         return false;
     }
 }
-
 
 
 /* =========================================================
@@ -784,7 +901,6 @@ async function checkMicrophone() {
 
         const student =
             await getStudentMonitoringData();
-
 
         if (
             isAvailable(
@@ -803,20 +919,17 @@ async function checkMicrophone() {
             return true;
         }
 
-
         microphoneReady = false;
 
         setStatus(
             "microphoneStatus",
-            "failed",
-            "✕ Not Active"
+            "checking",
+            "Waiting..."
         );
 
         return false;
 
-    }
-
-    catch (error) {
+    } catch (error) {
 
         console.error(
             "Microphone check:",
@@ -827,14 +940,17 @@ async function checkMicrophone() {
 
         setStatus(
             "microphoneStatus",
-            "failed",
-            "✕ Unavailable"
+            monitorStarted
+                ? "checking"
+                : "failed",
+            monitorStarted
+                ? "Waiting..."
+                : "✕ Unavailable"
         );
 
         return false;
     }
 }
-
 
 
 /* =========================================================
@@ -889,21 +1005,14 @@ async function checkAIMonitoring() {
         const student =
             await getStudentMonitoringData();
 
+        const running =
+            student.running === true ||
+            String(student.status || "").toUpperCase() === "ONLINE" ||
+            student.monitor !== undefined;
 
-        /*
-         * AI_AVAILABLE is published by
-         * the existing monitoring process.
-         */
+        if (running) {
 
-        if (
-            isAvailable(
-                student.ai_available
-            ) &&
-            String(
-                student.status || ""
-            ).toUpperCase() === "ONLINE"
-        ) {
-
+            monitorStarted = true;
             aiReady = true;
 
             setStatus(
@@ -915,20 +1024,17 @@ async function checkAIMonitoring() {
             return true;
         }
 
-
         aiReady = false;
 
         setStatus(
             "aiStatus",
-            "failed",
-            "✕ Offline"
+            "checking",
+            "Starting..."
         );
 
         return false;
 
-    }
-
-    catch (error) {
+    } catch (error) {
 
         console.error(
             "AI monitoring check:",
@@ -939,14 +1045,17 @@ async function checkAIMonitoring() {
 
         setStatus(
             "aiStatus",
-            "failed",
-            "✕ Offline"
+            monitorStarted
+                ? "checking"
+                : "failed",
+            monitorStarted
+                ? "Starting..."
+                : "✕ Agent Offline"
         );
 
         return false;
     }
 }
-
 
 
 /* =========================================================
@@ -1119,10 +1228,27 @@ function updateContinueButton() {
 async function runChecks() {
 
     /*
-     * Read the existing monitoring state.
-     *
-     * We do NOT open a second camera.
+     * The central Flask server prepares the SQL-backed
+     * session. The local student agent actually starts
+     * live_monitor.py on this student's computer.
      */
+
+    if (!monitorStarted) {
+
+        await startStudentAgent();
+
+        /*
+         * Give live_monitor.py a short moment to open
+         * the camera, microphone and publish its status.
+         */
+        await new Promise(
+            resolve =>
+                setTimeout(
+                    resolve,
+                    1000
+                )
+        );
+    }
 
     await checkCamera();
 
@@ -1136,7 +1262,6 @@ async function runChecks() {
 
     updateContinueButton();
 }
-
 
 
 /* =========================================================
@@ -1191,7 +1316,7 @@ document.addEventListener(
    CONTINUE TO EXAM
 ========================================================= */
 
-function continueToExam() {
+async function continueToExam() {
 
     if (
         !(
@@ -1206,12 +1331,72 @@ function continueToExam() {
         return;
     }
 
-
-    window.location.href =
-        "/student/exam/" +
-        encodeURIComponent(
-            EXAM_ID
+    const button =
+        document.getElementById(
+            "continueButton"
         );
+
+    const message =
+        document.getElementById(
+            "message"
+        );
+
+    button.disabled = true;
+
+    button.innerText =
+        "Starting Examination...";
+
+    message.innerText =
+        "Verifying PROCTIFY monitoring...";
+
+    try {
+
+        const student =
+            await getStudentMonitoringData();
+
+        const running =
+            student.running === true ||
+            String(student.status || "").toUpperCase() === "ONLINE" ||
+            student.monitor !== undefined;
+
+        if (!running) {
+
+            throw new Error(
+                "PROCTIFY AI monitoring is not running."
+            );
+        }
+
+        window.location.href =
+            "/student/exam/" +
+            encodeURIComponent(
+                EXAM_ID
+            );
+
+    } catch (error) {
+
+        console.error(
+            "Continue to exam error:",
+            error
+        );
+
+        button.disabled = false;
+
+        button.innerText =
+            "Continue to Examination →";
+
+        message.innerText =
+            "Monitoring is not ready. Please wait and try again.";
+
+        aiReady = false;
+
+        setStatus(
+            "aiStatus",
+            "failed",
+            "✕ Offline"
+        );
+
+        updateContinueButton();
+    }
 }
 
 
@@ -1222,7 +1407,9 @@ function continueToExam() {
 
 runChecks();
 
-// The monitor starts automatically when this precheck page opens.
+// Start the local student agent automatically when this
+// precheck page opens. The agent launches live_monitor.py
+// on the student's own computer without showing a window.
 // Keep checking while camera, microphone and AI are starting.
 setInterval(runChecks, 2000);
 

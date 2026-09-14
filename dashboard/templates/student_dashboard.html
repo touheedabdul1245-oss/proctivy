@@ -542,7 +542,14 @@ async function loadStudentExams() {
                             exam.status || ""
                         ).toUpperCase();
 
-                    return status === "ACTIVE";
+                    /*
+                     * MySQL is the source of truth. The backend
+                     * already excludes expired exams.
+                     */
+                    return (
+                        status === "ACTIVE" ||
+                        status === "SCHEDULED"
+                    );
 
                 }
             );
@@ -569,9 +576,20 @@ async function loadStudentExams() {
                 const isActive =
                     status === "ACTIVE";
 
+                const isAttempted =
+                    exam.attempted === true ||
+                    exam.attempted === 1 ||
+                    String(
+                        exam.attempted || ""
+                    ).toLowerCase() === "true" ||
+                    String(
+                        exam.attempted || ""
+                    ) === "1";
+
                 if (
                     status === "SCHEDULED" &&
-                    exam.scheduled_start
+                    exam.scheduled_start &&
+                    !isAttempted
                 ) {
                     window.scheduledExamTimes[exam.exam_id] =
                         exam.scheduled_start;
@@ -599,31 +617,42 @@ async function loadStudentExams() {
                         : "";
 
                 const buttonHTML =
-                    isActive
+                    isAttempted
                         ? `
-                            <button
-                                type="button"
-                                class="start-exam-button"
-                                onclick="startExam(
-                                    '${escapeJS(
-                                        exam.exam_id
-                                    )}'
-                                )">
-
-                                Start Exam →
-
-                            </button>
-                          `
-                        : `
                             <button
                                 type="button"
                                 class="start-exam-button"
                                 disabled>
 
-                                Exam Scheduled
+                                Exam Attempted
 
                             </button>
-                          `;
+                          `
+                        : isActive
+                            ? `
+                                <button
+                                    type="button"
+                                    class="start-exam-button"
+                                    onclick="startExam(
+                                        '${escapeJS(
+                                            exam.exam_id
+                                        )}'
+                                    )">
+
+                                    Start Exam →
+
+                                </button>
+                              `
+                            : `
+                                <button
+                                    type="button"
+                                    class="start-exam-button"
+                                    disabled>
+
+                                    Exam Scheduled
+
+                                </button>
+                              `;
 
                 card.innerHTML = `
 
@@ -634,11 +663,23 @@ async function loadStudentExams() {
                         </div>
 
                         <span class="exam-status ${
-                            isActive
-                                ? "active"
-                                : "scheduled"
+                            isAttempted
+                                ? "scheduled"
+                                : (
+                                    isActive
+                                        ? "active"
+                                        : "scheduled"
+                                )
                         }">
-                            ${isActive ? "ACTIVE" : "SCHEDULED"}
+                            ${
+                                isAttempted
+                                    ? "ATTEMPTED"
+                                    : (
+                                        isActive
+                                            ? "ACTIVE"
+                                            : "SCHEDULED"
+                                    )
+                            }
                         </span>
 
                     </div>

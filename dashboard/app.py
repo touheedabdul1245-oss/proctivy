@@ -1,5 +1,6 @@
-from flask import Flask, render_template, jsonify, request, session, redirect
+from flask import Flask, render_template, jsonify, request, session, redirect, send_file
 import mysql.connector
+import html as html_lib
 import json
 import os
 import base64
@@ -87,7 +88,15 @@ LIVE_MONITOR_FILE = os.path.join(
     "live_monitor.py"
 )
 
+# Student-side agent. The AI monitor runs on the student's PC,
+# not on this Flask/teacher server.
+STUDENT_AGENT_URL = "http://127.0.0.1:8765"
+
 monitor_processes = {}
+
+# Stores the MySQL-linked monitoring session ID for each
+# currently running student monitor process.
+monitor_session_ids = {}
 
 
 # ============================================================
@@ -996,41 +1005,175 @@ def student_verify():
 # ============================================================
 
 def start_live_monitor(student_id, exam_id, exam_name):
+    """
+    Prepare the monitoring session for the authenticated student.
 
-    process = monitor_processes.get(student_id)
+    IMPORTANT:
+    Flask does NOT start live_monitor.py here. The student's browser
+    will start it through the local PROCTIFY Student Agent at
+    http://127.0.0.1:8765.
 
-    if process is not None and process.poll() is None:
-        return True, "Monitoring is already running"
+    MySQL remains the authoritative source for student/exam/session
+    records, violations, evidence, Trust Score and submissions.
+    """
+    student_id = str(student_id).strip()
+    exam_id = str(exam_id).strip()
+    exam_name = str(exam_name).strip()
 
-    if not os.path.exists(LIVE_MONITOR_FILE):
-        return False, "live_monitor.py was not found"
+    if not student_id:
+        return False, "Student ID is required"
 
-    session_id = f"SESSION_{int(datetime.now().timestamp())}"
+    if not exam_id:
+        return False, "Exam ID is required"
+
+    if not exam_name:
+        return False, "Exam name is required"
+
+    existing_session_id = session.get("active_session_id")
+    existing_exam_id = session.get("active_exam_id")
+
+    if (
+        existing_session_id
+        and existing_exam_id
+        and str(existing_exam_id) == exam_id
+    ):
+        return True, str(existing_session_id)
+
+    session_id = (
+        f"SESSION_{int(datetime.now().timestamp())}_{student_id}"
+    )
+
+    session["active_session_id"] = str(session_id)
+    session["active_exam_id"] = str(exam_id)
+
+    print(
+        f"Prepared student-side monitor for {student_id} | "
+        f"Exam: {exam_name} | Session: {session_id}"
+    )
+
+    return True, session_id
+
+
+def mark_student_offline_in_database(student_id, session_id=None):
+    """
+    Force the student's live monitoring row to OFFLINE.
+
+    This is required because terminating a subprocess on Windows can
+    prevent the child's Python finally-block from running. The teacher
+    dashboard therefore must explicitly close the live session here.
+    """
+    connection = None
+    cursor = None
 
     try:
-        process = subprocess.Popen(
-            [
-                sys.executable,
-                LIVE_MONITOR_FILE,
-                str(student_id),
-                str(session_id),
-                str(exam_name)
-            ],
-            cwd=BASE_DIR
-        )
+        connection = get_database_connection()
 
-        monitor_processes[student_id] = process
+        if connection is None:
+            print("Unable to mark student OFFLINE: MySQL unavailable.")
+            return False
 
+        cursor = connection.cursor()
+
+        if session_id:
+            cursor.execute(
+                """
+                UPDATE live_students
+                SET
+                    status = 'OFFLINE',
+                    phone = 0,
+                    phone_count = 0,
+                    person_count = 0,
+                    face_count = 0,
+                    hand_count = 0,
+                    gaze = 'NO FACE',
+                    head_direction = 'NO FACE',
+                    audio = 'STOPPED',
+                    audio_volume = 0,
+                    camera_available = 0,
+                    audio_available = 0,
+                    ai_available = 0,
+                    tab_available = 0
+                WHERE student_id = %s
+                  AND session_id = %s
+                """,
+                (str(student_id), str(session_id))
+            )
+        else:
+            cursor.execute(
+                """
+                UPDATE live_students
+                SET
+                    status = 'OFFLINE',
+                    phone = 0,
+                    phone_count = 0,
+                    person_count = 0,
+                    face_count = 0,
+                    hand_count = 0,
+                    gaze = 'NO FACE',
+                    head_direction = 'NO FACE',
+                    audio = 'STOPPED',
+                    audio_volume = 0,
+                    camera_available = 0,
+                    audio_available = 0,
+                    ai_available = 0,
+                    tab_available = 0
+                WHERE student_id = %s
+                """,
+                (str(student_id),)
+            )
+
+        connection.commit()
         print(
-            f"Started monitor for {student_id} | "
-            f"Exam: {exam_name} | Session: {session_id}"
+            f"Marked {student_id} OFFLINE in MySQL"
+            + (f" | Session: {session_id}" if session_id else "")
         )
-
-        return True, session_id
+        return True
 
     except Exception as error:
-        print("Live monitor start error:", error)
-        return False, str(error)
+        if connection is not None:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+        print("MySQL offline update error:", error)
+        return False
+
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+def stop_live_monitor(student_id, session_id=None):
+    """
+    Clean server-side monitoring state.
+
+    The actual monitor process is owned by the Student Agent on the
+    student's PC. This server function therefore does not terminate
+    a subprocess. It marks the SQL live_students record OFFLINE.
+    """
+    student_id = str(student_id)
+
+    effective_session_id = (
+        session_id
+        or monitor_session_ids.get(student_id)
+        or session.get("active_session_id")
+    )
+
+    monitor_processes.pop(student_id, None)
+    monitor_session_ids.pop(student_id, None)
+
+    mark_student_offline_in_database(
+        student_id,
+        session_id=effective_session_id
+    )
+
+    if session.get("active_session_id"):
+        session.pop("active_session_id", None)
+
+    if session.get("active_exam_id"):
+        session.pop("active_exam_id", None)
 
 
 # ============================================================
@@ -1074,6 +1217,24 @@ def student_precheck(exam_id):
         if exam is None:
             return "Exam not found", 404
 
+        # Do not allow a student to start an exam that was already submitted.
+        cursor.execute(
+            """
+            SELECT submission_id, status
+            FROM exam_submissions
+            WHERE exam_id = %s
+              AND student_id = %s
+            ORDER BY submitted_at DESC
+            LIMIT 1
+            """,
+            (exam_id, str(student_id))
+        )
+
+        existing_submission = cursor.fetchone()
+
+        if existing_submission is not None:
+            return redirect("/student")
+
         success, result = start_live_monitor(
             str(student_id),
             str(exam["exam_id"]),
@@ -1086,13 +1247,134 @@ def student_precheck(exam_id):
         return render_template(
             "student_precheck.html",
             exam_id=exam_id,
-            student_id=student_id
+            student_id=student_id,
+            session_id=session.get("active_session_id"),
+            exam_name=exam["exam_name"],
+            student_agent_url=STUDENT_AGENT_URL
         )
 
     finally:
         if cursor is not None:
             cursor.close()
 
+        if connection is not None:
+            connection.close()
+
+
+# ============================================================
+# STUDENT MONITOR AGENT START INFORMATION
+# ============================================================
+
+@app.route(
+    "/api/student/monitor/start",
+    methods=["POST"]
+)
+def api_student_monitor_start():
+
+    student_id = session.get("student_id")
+
+    if not student_id:
+        return jsonify({
+            "success": False,
+            "error": "Student login required."
+        }), 401
+
+    connection = None
+    cursor = None
+
+    try:
+        data = request.get_json(silent=True) or {}
+        exam_id = str(data.get("exam_id", "")).strip()
+
+        if not exam_id:
+            return jsonify({
+                "success": False,
+                "error": "Exam ID is required."
+            }), 400
+
+        connection = get_database_connection()
+
+        if connection is None:
+            return jsonify({
+                "success": False,
+                "error": "Unable to connect to MySQL."
+            }), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute(
+            """
+            SELECT
+                e.exam_id,
+                e.exam_name,
+                e.status
+            FROM exams e
+            INNER JOIN exam_assignments a
+                ON a.exam_id = e.exam_id
+            WHERE e.exam_id = %s
+              AND a.student_id = %s
+            LIMIT 1
+            """,
+            (exam_id, str(student_id))
+        )
+
+        exam = cursor.fetchone()
+
+        if exam is None:
+            return jsonify({
+                "success": False,
+                "error": "Exam is not assigned to this student."
+            }), 403
+
+        cursor.execute(
+            """
+            SELECT submission_id
+            FROM exam_submissions
+            WHERE exam_id = %s
+              AND student_id = %s
+            ORDER BY submitted_at DESC
+            LIMIT 1
+            """,
+            (exam_id, str(student_id))
+        )
+
+        if cursor.fetchone() is not None:
+            return jsonify({
+                "success": False,
+                "error": "This exam has already been submitted."
+            }), 409
+
+        success, session_id = start_live_monitor(
+            str(student_id),
+            str(exam["exam_id"]),
+            str(exam["exam_name"])
+        )
+
+        if not success:
+            return jsonify({
+                "success": False,
+                "error": str(session_id)
+            }), 500
+
+        return jsonify({
+            "success": True,
+            "student_id": str(student_id),
+            "exam_id": str(exam["exam_id"]),
+            "exam_name": str(exam["exam_name"]),
+            "session_id": str(session_id),
+            "student_agent_url": STUDENT_AGENT_URL
+        })
+
+    except Exception as error:
+        print("Student monitor preparation error:", error)
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 500
+
+    finally:
+        if cursor is not None:
+            cursor.close()
         if connection is not None:
             connection.close()
 
@@ -1107,8 +1389,40 @@ def student_precheck(exam_id):
 )
 def student_exam(exam_id):
 
-    if not session.get("student_id"):
+    student_id = session.get("student_id")
+
+    if not student_id:
         return redirect("/")
+
+    connection = None
+    cursor = None
+
+    try:
+        connection = get_database_connection()
+
+        if connection is not None:
+            cursor = connection.cursor(dictionary=True)
+
+            cursor.execute(
+                """
+                SELECT submission_id
+                FROM exam_submissions
+                WHERE exam_id = %s
+                  AND student_id = %s
+                ORDER BY submitted_at DESC
+                LIMIT 1
+                """,
+                (exam_id, str(student_id))
+            )
+
+            if cursor.fetchone() is not None:
+                return redirect("/student")
+
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
 
     return render_template(
         "student_exam.html",
@@ -1327,6 +1641,24 @@ def api_student(student_id):
 # API - LIVE STATUS
 # ============================================================
 
+def is_live_monitor_running(student_id):
+    """
+    Return True only when the live_monitor.py subprocess that
+    belongs to this student is currently running.
+    """
+    student_id = str(student_id)
+
+    process = monitor_processes.get(student_id)
+
+    if process is None:
+        return False
+
+    try:
+        return process.poll() is None
+    except Exception:
+        return False
+
+
 @app.route("/api/status")
 def api_status():
 
@@ -1347,14 +1679,21 @@ def api_status():
 
         for student in students
 
-        if str(
-            student.get(
-                "status",
-                ""
-            )
-        ).upper() == "ONLINE"
+        if (
+            str(
+                student.get(
+                    "status",
+                    ""
+                )
+            ).upper() == "ONLINE"
+        )
 
     ]
+
+    # IMPORTANT:
+    # The teacher dashboard must show a student card only while
+    # that student's live_monitor.py process is actually running.
+    # A stale ONLINE row in MySQL must never create a live card.
 
 
     return jsonify({
@@ -1375,7 +1714,7 @@ def api_status():
             ),
 
         "students":
-            students,
+            online_students,
 
         "online_students":
             len(
@@ -2442,10 +2781,26 @@ def get_exams():
                     e.scheduled_start,
                     e.scheduled_end,
                     e.status,
-                    e.created_at
+                    e.created_at,
+                    CASE
+                        WHEN s.submission_id IS NOT NULL THEN 1
+                        ELSE 0
+                    END AS attempted,
+                    s.submission_id,
+                    s.status AS submission_status,
+                    s.score AS submission_score,
+                    s.teacher_marks,
+                    s.trust_score
                 FROM exams e
                 INNER JOIN exam_assignments a
                     ON a.exam_id = e.exam_id
+                LEFT JOIN exam_submissions s
+                    ON s.submission_id = (
+                        SELECT MAX(s2.submission_id)
+                        FROM exam_submissions s2
+                        WHERE s2.exam_id = e.exam_id
+                          AND s2.student_id = a.student_id
+                    )
                 WHERE a.student_id = %s
                   AND e.status != 'EXPIRED'
                 ORDER BY e.created_at DESC
@@ -2486,6 +2841,10 @@ def get_exams():
         # ----------------------------------------------------
 
         for exam in exams:
+
+            exam["attempted"] = bool(
+                exam.get("attempted")
+            )
 
             questions = exam.get(
                 "questions"
@@ -3301,100 +3660,147 @@ def complete_exam(exam_id):
 @app.route("/api/submissions")
 def api_submissions():
 
+    connection = None
+    cursor = None
+
     try:
+
+        connection = get_database_connection()
+
+        if connection is None:
+
+            return jsonify({
+                "success": False,
+                "error": "Unable to connect to MySQL",
+                "submitted": 0,
+                "evaluated": 0,
+                "pending": 0,
+                "submissions": []
+            }), 500
+
+        cursor = connection.cursor(
+            dictionary=True
+        )
+
+        # MySQL is the primary source for submission cards.
+        # Student identity is joined from the students table.
+        query = """
+            SELECT
+                es.submission_id,
+                es.exam_id,
+                e.exam_name,
+                es.student_id,
+                s.student_name,
+                es.session_id,
+                es.answers,
+                es.score,
+                es.teacher_marks,
+                es.trust_score,
+                es.total_questions,
+                es.submitted_at,
+                es.evaluated_at,
+                es.status,
+                es.evaluation_type,
+                es.teacher_feedback,
+
+                (
+                    SELECT COUNT(*)
+                    FROM violations v
+                    WHERE v.session_id = es.session_id
+                ) AS violation_count,
+
+                (
+                    SELECT COUNT(*)
+                    FROM evidence ev
+                    WHERE ev.session_id = es.session_id
+                ) AS evidence_count
+
+            FROM exam_submissions es
+
+            LEFT JOIN students s
+                ON s.student_id = es.student_id
+
+            LEFT JOIN exams e
+                ON e.exam_id = es.exam_id
+
+            ORDER BY
+                es.submitted_at DESC
+        """
+
+        cursor.execute(query)
+
+        rows = cursor.fetchall()
 
         submissions = []
 
-        # ----------------------------------------------------
-        # Read submission files
-        # ----------------------------------------------------
+        for row in rows:
 
-        if os.path.exists(
-            SUBMISSIONS_DIR
-        ):
+            answers = row.get("answers")
 
-            for filename in os.listdir(
-                SUBMISSIONS_DIR
-            ):
-
-                if not filename.endswith(
-                    ".json"
-                ):
-
-                    continue
-
-
-                submission_file = os.path.join(
-                    SUBMISSIONS_DIR,
-                    filename
-                )
-
+            if isinstance(answers, str):
 
                 try:
+                    row["answers"] = json.loads(answers)
 
-                    with open(
-                        submission_file,
-                        "r",
-                        encoding="utf-8"
-                    ) as file:
+                except Exception:
+                    row["answers"] = {}
 
-                        submission = json.load(
-                            file
-                        )
+            for field in [
+                "submitted_at",
+                "evaluated_at"
+            ]:
 
+                value = row.get(field)
 
-                    if isinstance(
-                        submission,
-                        dict
-                    ):
+                if isinstance(value, datetime):
+                    row[field] = value.isoformat()
 
-                        submissions.append(
-                            submission
-                        )
+            # Compatibility fields for the teacher dashboard.
+            status = str(
+                row.get("status") or "SUBMITTED"
+            ).upper()
 
+            evaluation_type = str(
+                row.get("evaluation_type") or ""
+            ).upper()
 
-                except Exception as error:
-
-                    print(
-                        "Submission read error:",
-                        filename,
-                        error
-                    )
-
-
-        # ----------------------------------------------------
-        # Calculate counts
-        # ----------------------------------------------------
-
-        submitted_count = len(
-            submissions
-        )
-
-        evaluated_count = 0
-
-        pending_count = 0
-
-
-        for submission in submissions:
-
-            evaluated = submission.get(
-                "evaluated",
-                False
+            row["evaluated"] = (
+                status == "EVALUATED"
             )
 
+            row["pending_review"] = (
+                status == "PENDING_REVIEW"
+            )
 
-            if evaluated is True:
+            row["evaluation_type"] = (
+                evaluation_type
+                if evaluation_type
+                else (
+                    "MANUAL"
+                    if status == "PENDING_REVIEW"
+                    else "AUTO"
+                )
+            )
 
-                evaluated_count += 1
+            submissions.append(row)
 
-            else:
+        submitted_count = len(submissions)
 
-                pending_count += 1
+        evaluated_count = sum(
+            1
+            for item in submissions
+            if str(
+                item.get("status") or ""
+            ).upper() == "EVALUATED"
+        )
 
-
-        # ----------------------------------------------------
-        # Response
-        # ----------------------------------------------------
+        pending_count = sum(
+            1
+            for item in submissions
+            if str(
+                item.get("status") or ""
+            ).upper() == "PENDING_REVIEW"
+        )
 
         return jsonify({
 
@@ -3409,19 +3815,20 @@ def api_submissions():
             "pending":
                 pending_count,
 
+            "count":
+                submitted_count,
+
             "submissions":
                 submissions
 
         })
 
-
     except Exception as error:
 
         print(
-            "Submissions API error:",
+            "Submissions MySQL API error:",
             error
         )
-
 
         return jsonify({
 
@@ -3439,8 +3846,470 @@ def api_submissions():
             "submissions": []
 
         }), 500
+
+    finally:
+
+        if cursor is not None:
+            cursor.close()
+
+        if connection is not None:
+            connection.close()
+
+
+
 # ============================================================
-# SUBMIT EXAM ANSWERS
+# SUBMISSION REPORTS + TEACHER MANUAL EVALUATION
+# ============================================================
+
+SUBMISSION_REPORTS_DIR = os.path.join(
+    BASE_DIR, "reports", "submissions"
+)
+os.makedirs(SUBMISSION_REPORTS_DIR, exist_ok=True)
+
+
+def get_submission_report_data(submission_id):
+    connection = None
+    cursor = None
+    try:
+        connection = get_database_connection()
+        if connection is None:
+            return None
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT
+                es.submission_id, es.exam_id, e.exam_name, e.subject,
+                es.student_id, s.student_name, s.username,
+                es.session_id, es.answers, es.score, es.teacher_marks,
+                es.trust_score, es.total_questions, es.submitted_at,
+                es.evaluated_at, es.status, es.evaluation_type,
+                es.teacher_feedback
+            FROM exam_submissions es
+            LEFT JOIN students s ON s.student_id = es.student_id
+            LEFT JOIN exams e ON e.exam_id = es.exam_id
+            WHERE es.submission_id = %s
+            LIMIT 1
+        """, (int(submission_id),))
+        submission = cursor.fetchone()
+        if submission is None:
+            return None
+
+        session_id = submission.get("session_id")
+        violations = []
+        evidence = []
+
+        if session_id:
+            cursor.execute("""
+                SELECT id, violation_type, severity, penalty,
+                       description, timestamp
+                FROM violations
+                WHERE session_id = %s
+                ORDER BY timestamp ASC
+            """, (str(session_id),))
+            violations = cursor.fetchall()
+
+            cursor.execute("""
+                SELECT id, violation_id, session_id, file_path, timestamp
+                FROM evidence
+                WHERE session_id = %s
+                ORDER BY timestamp ASC
+            """, (str(session_id),))
+            evidence = cursor.fetchall()
+
+        for row in [submission] + violations + evidence:
+            for key, value in list(row.items()):
+                if isinstance(value, datetime):
+                    row[key] = value.isoformat()
+
+        status = str(submission.get("status") or "").upper()
+        score = submission.get("score")
+        result = None if score is None else (
+            "PASS" if float(score) >= 50 else "FAIL"
+        )
+
+        submission["pass_fail"] = result
+        submission["violations"] = violations
+        submission["evidence"] = evidence
+        submission["total_violations"] = len(violations)
+        submission["total_evidence"] = len(evidence)
+        submission["is_pending"] = status == "PENDING_REVIEW"
+        return submission
+
+    except Exception as error:
+        print("Submission report data error:", error)
+        return None
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+def generate_submission_report(submission_id):
+    report = get_submission_report_data(submission_id)
+    if report is None:
+        return None
+
+    def esc(value):
+        return html_lib.escape(
+            str(value if value is not None else "")
+        )
+
+    score = report.get("score")
+    result = report.get("pass_fail") or "PENDING"
+
+    violations_html = "".join(
+        f"""
+        <tr>
+          <td>{esc(v.get("violation_type"))}</td>
+          <td>{esc(v.get("severity"))}</td>
+          <td>{esc(v.get("penalty"))}</td>
+          <td>{esc(v.get("description"))}</td>
+          <td>{esc(v.get("timestamp"))}</td>
+        </tr>
+        """
+        for v in report["violations"]
+    ) or "<tr><td colspan='5'>No violations recorded.</td></tr>"
+
+    evidence_html = "".join(
+        f"""
+        <div class="evidence">
+          <img src="/api/evidence/{int(e["id"])}/image">
+          <small>Evidence #{int(e["id"])} · {esc(e.get("timestamp"))}</small>
+        </div>
+        """
+        for e in report["evidence"]
+    ) or "<p>No evidence images recorded.</p>"
+
+    report_html = f"""<!doctype html>
+<html><head><meta charset="utf-8">
+<title>PROCTIFY Report</title>
+<style>
+body{{font-family:Arial,sans-serif;margin:40px;color:#222}}
+.summary{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}}
+.box{{border:1px solid #ddd;border-radius:10px;padding:16px}}
+.label{{font-size:12px;color:#777}} .value{{font-size:24px;font-weight:bold}}
+table{{width:100%;border-collapse:collapse}}th,td{{border:1px solid #ddd;padding:8px;text-align:left}}
+.grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}}
+.evidence img{{width:100%;height:240px;object-fit:contain;border:1px solid #ddd;border-radius:8px}}
+.evidence small{{display:block;color:#666;margin-top:5px}}
+</style></head><body>
+<h1>PROCTIFY Examination Report</h1>
+<p>
+<b>Student:</b> {esc(report.get("student_name") or report.get("student_id"))}<br>
+<b>Student ID:</b> {esc(report.get("student_id"))}<br>
+<b>Exam:</b> {esc(report.get("exam_name") or report.get("exam_id"))}<br>
+<b>Submission ID:</b> {esc(report.get("submission_id"))}
+</p>
+<div class="summary">
+<div class="box"><div class="label">MARKS</div><div class="value">{esc(score if score is not None else "PENDING")}</div></div>
+<div class="box"><div class="label">TRUST SCORE</div><div class="value">{esc(report.get("trust_score"))}</div></div>
+<div class="box"><div class="label">RESULT</div><div class="value">{esc(result)}</div></div>
+<div class="box"><div class="label">EVALUATION</div><div class="value">{esc(report.get("evaluation_type"))}</div></div>
+</div>
+<h2>Violation History</h2>
+<table><thead><tr><th>Violation</th><th>Severity</th><th>Penalty</th><th>Description</th><th>Time</th></tr></thead>
+<tbody>{violations_html}</tbody></table>
+<h2>Evidence</h2><div class="grid">{evidence_html}</div>
+</body></html>"""
+
+    path = os.path.join(
+        SUBMISSION_REPORTS_DIR,
+        f"submission_{int(submission_id)}.html"
+    )
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(report_html)
+    return path
+
+
+
+# ============================================================
+# SQL-ONLY REPORT COMPATIBILITY ENDPOINTS
+# ============================================================
+# These endpoints exist so older/cached dashboard JavaScript that
+# calls /api/reports still reads exclusively from MySQL.
+# ============================================================
+
+@app.route("/api/reports", methods=["GET"])
+def api_reports_sql_only():
+    connection = None
+    cursor = None
+    try:
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({"success": False, "error": "Unable to connect to MySQL.", "reports": []}), 500
+
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT
+                es.submission_id,
+                es.exam_id,
+                e.exam_name,
+                es.student_id,
+                s.student_name,
+                es.session_id,
+                es.score,
+                es.teacher_marks,
+                es.trust_score,
+                es.total_questions,
+                es.submitted_at,
+                es.evaluated_at,
+                es.status,
+                es.evaluation_type,
+                es.teacher_feedback
+            FROM exam_submissions es
+            LEFT JOIN students s ON s.student_id = es.student_id
+            LEFT JOIN exams e ON e.exam_id = es.exam_id
+            ORDER BY es.submitted_at DESC
+        """)
+        rows = cursor.fetchall()
+        reports = []
+
+        for row in rows:
+            session_id = row.get("session_id")
+            violation_count = 0
+            evidence_count = 0
+
+            if session_id:
+                cursor.execute(
+                    "SELECT COUNT(*) AS c FROM violations WHERE session_id = %s",
+                    (str(session_id),)
+                )
+                violation_count = int((cursor.fetchone() or {}).get("c", 0) or 0)
+
+                cursor.execute(
+                    "SELECT COUNT(*) AS c FROM evidence WHERE session_id = %s",
+                    (str(session_id),)
+                )
+                evidence_count = int((cursor.fetchone() or {}).get("c", 0) or 0)
+
+            trust = row.get("trust_score")
+            if trust is None:
+                risk = "LOW"
+            elif int(trust) < 50:
+                risk = "HIGH"
+            elif int(trust) < 75:
+                risk = "MEDIUM"
+            else:
+                risk = "LOW"
+
+            for key, value in list(row.items()):
+                if isinstance(value, datetime):
+                    row[key] = value.isoformat()
+
+            reports.append({
+                **row,
+                "final_trust_score": row.get("trust_score"),
+                "final_risk_level": risk,
+                "violation_count": violation_count,
+                "evidence_count": evidence_count
+            })
+
+        return jsonify({"success": True, "reports": reports})
+
+    except Exception as error:
+        print("SQL reports API error:", error)
+        return jsonify({"success": False, "error": str(error), "reports": []}), 500
+
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+@app.route("/api/reports/<session_id>", methods=["GET"])
+def api_report_by_session_sql_only(session_id):
+    connection = None
+    cursor = None
+    try:
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({"success": False, "error": "Unable to connect to MySQL."}), 500
+
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT submission_id
+            FROM exam_submissions
+            WHERE session_id = %s
+            ORDER BY submission_id DESC
+            LIMIT 1
+        """, (str(session_id),))
+        row = cursor.fetchone()
+
+        if row is None:
+            return jsonify({
+                "success": False,
+                "error": "No MySQL submission found for this session."
+            }), 404
+
+        submission_id = int(row["submission_id"])
+        report = get_submission_report_data(submission_id)
+
+        if report is None:
+            return jsonify({"success": False, "error": "Submission report not found."}), 404
+
+        trust = report.get("trust_score")
+        if trust is None:
+            risk = "LOW"
+        elif int(trust) < 50:
+            risk = "HIGH"
+        elif int(trust) < 75:
+            risk = "MEDIUM"
+        else:
+            risk = "LOW"
+
+        report["final_trust_score"] = trust
+        report["final_risk_level"] = risk
+        report["violation_count"] = len(report.get("violations", []))
+        report["evidence_count"] = len(report.get("evidence", []))
+
+        generate_submission_report(submission_id)
+
+        return jsonify({
+            "success": True,
+            "report": report,
+            "report_url": f"/submission-report/{submission_id}"
+        })
+
+    except Exception as error:
+        print("SQL report detail error:", error)
+        return jsonify({"success": False, "error": str(error)}), 500
+
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+@app.route("/api/submissions/<int:submission_id>")
+def api_submission_detail(submission_id):
+    report = get_submission_report_data(submission_id)
+    if report is None:
+        return jsonify({"success": False, "error": "Submission not found"}), 404
+
+    path = generate_submission_report(submission_id)
+    return jsonify({
+        "success": True,
+        "submission": report,
+        "report_url": f"/submission-report/{submission_id}" if path else None
+    })
+
+
+@app.route("/api/submissions/<int:submission_id>/evaluate", methods=["POST"])
+def evaluate_submission(submission_id):
+    connection = None
+    cursor = None
+    try:
+        data = request.get_json(silent=True) or {}
+        try:
+            marks = float(data.get("marks"))
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "error": "Valid marks are required."}), 400
+
+        if marks < 0 or marks > 100:
+            return jsonify({"success": False, "error": "Marks must be between 0 and 100."}), 400
+
+        marks = round(marks)
+        feedback = str(data.get("feedback") or "").strip()
+
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({"success": False, "error": "Unable to connect to MySQL."}), 500
+
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT submission_id, status
+            FROM exam_submissions
+            WHERE submission_id = %s
+            LIMIT 1
+        """, (int(submission_id),))
+        row = cursor.fetchone()
+
+        if row is None:
+            return jsonify({"success": False, "error": "Submission not found."}), 404
+
+        if str(row["status"] or "").upper() != "PENDING_REVIEW":
+            return jsonify({"success": False, "error": "Submission is already evaluated."}), 409
+
+        now = datetime.now()
+        cursor.execute("""
+            UPDATE exam_submissions
+            SET score = %s,
+                teacher_marks = %s,
+                teacher_feedback = %s,
+                evaluated_at = %s,
+                status = 'EVALUATED',
+                evaluation_type = 'MANUAL'
+            WHERE submission_id = %s
+        """, (marks, marks, feedback or None, now, int(submission_id)))
+
+        connection.commit()
+        path = generate_submission_report(submission_id)
+        report = get_submission_report_data(submission_id)
+
+        return jsonify({
+            "success": True,
+            "submission": report,
+            "report_url": f"/submission-report/{submission_id}" if path else None
+        })
+
+    except Exception as error:
+        if connection is not None:
+            try: connection.rollback()
+            except Exception: pass
+        print("Manual evaluation error:", error)
+        return jsonify({"success": False, "error": str(error)}), 500
+    finally:
+        if cursor is not None: cursor.close()
+        if connection is not None: connection.close()
+
+
+@app.route("/submission-report/<int:submission_id>")
+def submission_report_page(submission_id):
+    path = generate_submission_report(submission_id)
+    if path is None:
+        return "Submission report not found", 404
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+@app.route("/api/evidence/<int:evidence_id>/image")
+def api_evidence_image(evidence_id):
+    connection = None
+    cursor = None
+    try:
+        connection = get_database_connection()
+        if connection is None:
+            return "MySQL unavailable", 500
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT file_path FROM evidence WHERE id = %s LIMIT 1",
+            (int(evidence_id),)
+        )
+        row = cursor.fetchone()
+        if not row or not row.get("file_path"):
+            return "Evidence not found", 404
+
+        filename = os.path.basename(str(row["file_path"]))
+        evidence_dir = os.path.join(BASE_DIR, "reports", "evidence")
+        path = os.path.join(evidence_dir, filename)
+
+        if not os.path.isfile(path):
+            return "Evidence image not found", 404
+
+        return send_file(path, mimetype="image/jpeg")
+    except Exception as error:
+        print("Evidence image error:", error)
+        return "Unable to load evidence", 500
+    finally:
+        if cursor is not None: cursor.close()
+        if connection is not None: connection.close()
+
+
+# ============================================================
+# SUBMIT EXAM ANSWERS - MYSQL PRIMARY
 # ============================================================
 
 @app.route(
@@ -3449,79 +4318,18 @@ def api_submissions():
 )
 def submit_exam(exam_id):
 
+    connection = None
+    cursor = None
+
     try:
 
         # ----------------------------------------------------
-        # Locate exam
+        # REQUIRE LOGGED-IN STUDENT
         # ----------------------------------------------------
 
-        exam_file = os.path.join(
-            EXAMS_DIR,
-            exam_id + ".json"
+        student_id = session.get(
+            "student_id"
         )
-
-        if not os.path.exists(
-            exam_file
-        ):
-
-            return jsonify({
-
-                "success": False,
-
-                "error":
-                    "Exam not found"
-
-            }), 404
-
-
-        # ----------------------------------------------------
-        # Read exam
-        # ----------------------------------------------------
-
-        with open(
-            exam_file,
-            "r",
-            encoding="utf-8"
-        ) as file:
-
-            exam = json.load(file)
-
-
-        # ----------------------------------------------------
-        # Read submitted data
-        # ----------------------------------------------------
-
-        data = request.get_json()
-
-
-        if not isinstance(
-            data,
-            dict
-        ):
-
-            return jsonify({
-
-                "success": False,
-
-                "error":
-                    "Invalid submission data"
-
-            }), 400
-
-
-        student_id = str(
-            data.get(
-                "student_id",
-                ""
-            )
-        ).strip()
-
-
-        answers = data.get(
-            "answers",
-            {}
-        )
-
 
         if not student_id:
 
@@ -3530,10 +4338,27 @@ def submit_exam(exam_id):
                 "success": False,
 
                 "error":
-                    "Student ID is required"
+                    "Student login required."
 
-            }), 400
+            }), 401
 
+        student_id = str(
+            student_id
+        ).strip()
+
+
+        # ----------------------------------------------------
+        # READ ANSWERS
+        # ----------------------------------------------------
+
+        data = request.get_json(
+            silent=True
+        ) or {}
+
+        answers = data.get(
+            "answers",
+            {}
+        )
 
         if not isinstance(
             answers,
@@ -3545,102 +4370,584 @@ def submit_exam(exam_id):
                 "success": False,
 
                 "error":
-                    "Answers must be an object"
+                    "Answers must be an object."
 
             }), 400
 
 
         # ----------------------------------------------------
-        # Evaluate answers
+        # CONNECT MYSQL
         # ----------------------------------------------------
 
-        questions = exam.get(
-            "questions",
-            []
+        connection = get_database_connection()
+
+        if connection is None:
+
+            return jsonify({
+
+                "success": False,
+
+                "error":
+                    "Unable to connect to MySQL."
+
+            }), 500
+
+        cursor = connection.cursor(
+            dictionary=True
         )
 
 
+        # ----------------------------------------------------
+        # VERIFY STUDENT EXISTS
+        # ----------------------------------------------------
+
+        cursor.execute(
+
+            """
+            SELECT
+                student_id,
+                student_name
+            FROM students
+            WHERE student_id = %s
+            LIMIT 1
+            """,
+
+            (
+                student_id,
+            )
+
+        )
+
+        student = cursor.fetchone()
+
+        if student is None:
+
+            return jsonify({
+
+                "success": False,
+
+                "error":
+                    "Logged-in student was not found in MySQL."
+
+            }), 404
+
+
+        # ----------------------------------------------------
+        # GET EXAM FROM MYSQL
+        # ----------------------------------------------------
+
+        cursor.execute(
+
+            """
+            SELECT
+                exam_id,
+                exam_name,
+                questions,
+                question_count,
+                status
+            FROM exams
+            WHERE exam_id = %s
+            LIMIT 1
+            """,
+
+            (
+                exam_id,
+            )
+
+        )
+
+        exam = cursor.fetchone()
+
+        if exam is None:
+
+            return jsonify({
+
+                "success": False,
+
+                "error":
+                    "Exam not found in MySQL."
+
+            }), 404
+
+
+        # ----------------------------------------------------
+        # VERIFY ASSIGNMENT
+        # ----------------------------------------------------
+
+        cursor.execute(
+
+            """
+            SELECT
+                assignment_id
+            FROM exam_assignments
+            WHERE exam_id = %s
+              AND student_id = %s
+            LIMIT 1
+            """,
+
+            (
+                exam_id,
+                student_id
+            )
+
+        )
+
+        assignment = cursor.fetchone()
+
+        if assignment is None:
+
+            return jsonify({
+
+                "success": False,
+
+                "error":
+                    "This exam is not assigned to the logged-in student."
+
+            }), 403
+
+
+        # ----------------------------------------------------
+        # LOAD QUESTIONS FROM MYSQL
+        # ----------------------------------------------------
+
+        questions = exam.get(
+            "questions"
+        )
+
+        if isinstance(
+            questions,
+            str
+        ):
+
+            try:
+
+                questions = json.loads(
+                    questions
+                )
+
+            except Exception:
+
+                questions = []
+
+        if not isinstance(
+            questions,
+            list
+        ):
+
+            questions = []
+
+
+        if not questions:
+
+            return jsonify({
+
+                "success": False,
+
+                "error":
+                    "Exam has no valid questions."
+
+            }), 400
+
+
+        # ----------------------------------------------------
+        # FIND MONITORING SESSION
+        # ----------------------------------------------------
+
+        session_id = session.get(
+            "active_session_id"
+        )
+
+        if not session_id:
+
+            # Fall back to the latest MySQL session for
+            # this student/exam if the browser session
+            # was refreshed.
+            cursor.execute(
+
+                """
+                SELECT
+                    es.session_id
+                FROM exam_sessions es
+                WHERE es.student_id = %s
+                  AND es.exam_name = %s
+                ORDER BY
+                    es.start_time DESC
+                LIMIT 1
+                """,
+
+                (
+                    student_id,
+                    exam["exam_name"]
+                )
+
+            )
+
+            session_row = cursor.fetchone()
+
+            if session_row:
+
+                session_id = str(
+                    session_row["session_id"]
+                )
+
+
+        # ----------------------------------------------------
+        # GET CURRENT TRUST SCORE FROM MYSQL
+        # ----------------------------------------------------
+
+        trust_score = 100
+        risk_level = "LOW"
+
+        if session_id:
+
+            cursor.execute(
+
+                """
+                SELECT
+                    final_trust_score,
+                    final_risk_level
+                FROM exam_sessions
+                WHERE session_id = %s
+                LIMIT 1
+                """,
+
+                (
+                    str(session_id),
+                )
+
+            )
+
+            session_row = cursor.fetchone()
+
+            if session_row:
+
+                if session_row.get(
+                    "final_trust_score"
+                ) is not None:
+
+                    trust_score = int(
+                        session_row[
+                            "final_trust_score"
+                        ]
+                    )
+
+                risk_level = str(
+                    session_row.get(
+                        "final_risk_level"
+                    ) or
+                    (
+                        "LOW"
+                        if trust_score >= 80
+                        else (
+                            "MEDIUM"
+                            if trust_score >= 50
+                            else "HIGH"
+                        )
+                    )
+                )
+
+            # The live_students row contains the continuously
+            # updated monitoring score while the monitor is running.
+            cursor.execute(
+
+                """
+                SELECT
+                    trust_score,
+                    risk_level
+                FROM live_students
+                WHERE student_id = %s
+                  AND session_id = %s
+                LIMIT 1
+                """,
+
+                (
+                    student_id,
+                    str(session_id)
+                )
+
+            )
+
+            live_row = cursor.fetchone()
+
+            if live_row:
+
+                if live_row.get(
+                    "trust_score"
+                ) is not None:
+
+                    trust_score = int(
+                        live_row[
+                            "trust_score"
+                        ]
+                    )
+
+                risk_level = str(
+                    live_row.get(
+                        "risk_level"
+                    ) or risk_level
+                )
+
+
+        trust_score = max(
+            0,
+            min(
+                100,
+                int(trust_score)
+            )
+        )
+
+
+        # ----------------------------------------------------
+        # EVALUATE ANSWERS
+        # ----------------------------------------------------
+
         correct_count = 0
-
         answered_count = 0
-
 
         for index, question in enumerate(
             questions
         ):
 
-            question_key = str(index)
+            if not isinstance(
+                question,
+                dict
+            ):
+                continue
 
+            question_key = str(
+                index
+            )
 
             student_answer = answers.get(
                 question_key
             )
 
-
-            if student_answer:
+            if (
+                student_answer is not None
+                and
+                str(student_answer).strip()
+            ):
 
                 answered_count += 1
-
 
             correct_answer = question.get(
                 "correct_answer"
             )
 
-
             if (
                 student_answer is not None
                 and
-                str(student_answer).upper()
+                correct_answer is not None
+                and
+                str(student_answer).strip().upper()
                 ==
-                str(correct_answer).upper()
+                str(correct_answer).strip().upper()
             ):
 
                 correct_count += 1
 
-
-        # ----------------------------------------------------
-        # Calculate score
-        # ----------------------------------------------------
 
         total_questions = len(
             questions
         )
 
 
-        if total_questions > 0:
+        automatic_score = round(
 
-            score = round(
-                (
-                    correct_count /
-                    total_questions
-                ) * 100
-            )
-
-        else:
-
-            score = 0
-
-
-        # ----------------------------------------------------
-        # Create submission ID
-        # ----------------------------------------------------
-
-        submission_id = (
-
-            "SUBMISSION_" +
-
-            datetime.now().strftime(
-                "%Y%m%d_%H%M%S_%f"
-            )
+            (
+                correct_count /
+                total_questions
+            ) * 100
 
         )
 
 
         # ----------------------------------------------------
-        # Submission data
+        # TRUST SCORE DECISION
         # ----------------------------------------------------
 
-        submission = {
+        if trust_score >= 50:
+
+            final_score = automatic_score
+            submission_status = "EVALUATED"
+            evaluation_type = "AUTO"
+            evaluated_at = datetime.now()
+
+        else:
+
+            final_score = None
+            submission_status = "PENDING_REVIEW"
+            evaluation_type = "MANUAL"
+            evaluated_at = None
+
+
+        # ----------------------------------------------------
+        # PREVENT DUPLICATE SUBMISSIONS
+        # ----------------------------------------------------
+
+        duplicate_query = """
+
+            SELECT
+                submission_id,
+                status
+            FROM exam_submissions
+            WHERE exam_id = %s
+              AND student_id = %s
+            ORDER BY submitted_at DESC
+            LIMIT 1
+
+        """
+
+        cursor.execute(
+
+            duplicate_query,
+
+            (
+                exam_id,
+                student_id
+            )
+
+        )
+
+        existing_submission = cursor.fetchone()
+
+        if existing_submission is not None:
+
+            return jsonify({
+
+                "success": False,
+
+                "error":
+                    "This exam has already been submitted.",
+
+                "submission_id":
+                    existing_submission[
+                        "submission_id"
+                    ],
+
+                "status":
+                    existing_submission[
+                        "status"
+                    ]
+
+            }), 409
+
+
+        # ----------------------------------------------------
+        # INSERT MYSQL SUBMISSION
+        # ----------------------------------------------------
+
+        insert_query = """
+
+            INSERT INTO exam_submissions
+            (
+                exam_id,
+                student_id,
+                session_id,
+                answers,
+                score,
+                teacher_marks,
+                trust_score,
+                total_questions,
+                submitted_at,
+                evaluated_at,
+                status,
+                evaluation_type,
+                teacher_feedback
+            )
+            VALUES
+            (
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                %s
+            )
+
+        """
+
+        submitted_at = datetime.now()
+
+        cursor.execute(
+
+            insert_query,
+
+            (
+                str(exam_id),
+                student_id,
+                str(session_id) if session_id else None,
+                json.dumps(answers),
+                final_score,
+                final_score if submission_status == "EVALUATED" else None,
+                trust_score,
+                total_questions,
+                submitted_at,
+                evaluated_at,
+                submission_status,
+                evaluation_type,
+                None
+            )
+
+        )
+
+        submission_id = cursor.lastrowid
+
+
+        # ----------------------------------------------------
+        # UPDATE EXAM SESSION TO FINAL STATE
+        # ----------------------------------------------------
+
+        if session_id:
+
+            cursor.execute(
+
+                """
+                UPDATE exam_sessions
+                SET
+                    status = 'COMPLETED',
+                    end_time = %s,
+                    final_trust_score = %s,
+                    final_risk_level = %s
+                WHERE session_id = %s
+                """,
+
+                (
+                    submitted_at,
+                    trust_score,
+                    risk_level,
+                    str(session_id)
+                )
+
+            )
+
+
+        connection.commit()
+
+        # The examination is finished. Stop the local live monitor
+        # immediately so camera/AI monitoring does not continue.
+        stop_live_monitor(
+            student_id,
+            session_id=session_id
+        )
+
+        # End the student's login session after successful submission.
+        # A later login will see this exam as ATTEMPTED and cannot reopen it.
+        session.clear()
+
+
+        # ----------------------------------------------------
+        # RESPONSE
+        # ----------------------------------------------------
+
+        submission_response = {
 
             "submission_id":
                 submission_id,
@@ -3649,16 +4956,16 @@ def submit_exam(exam_id):
                 exam_id,
 
             "exam_name":
-                exam.get(
-                    "exam_name",
-                    ""
-                ),
+                exam["exam_name"],
 
             "student_id":
                 student_id,
 
-            "answers":
-                answers,
+            "student_name":
+                student["student_name"],
+
+            "session_id":
+                session_id,
 
             "total_questions":
                 total_questions,
@@ -3670,59 +4977,42 @@ def submit_exam(exam_id):
                 correct_count,
 
             "score":
-                score,
+                final_score,
 
-            "evaluated":
-                True,
+            "automatic_score":
+                automatic_score,
+
+            "trust_score":
+                trust_score,
+
+            "risk_level":
+                risk_level,
 
             "status":
-                "SUBMITTED",
+                submission_status,
+
+            "evaluation_type":
+                evaluation_type,
 
             "submitted_at":
-                datetime.now().isoformat()
+                submitted_at.isoformat()
 
         }
 
-
-        # ----------------------------------------------------
-        # Save submission
-        # ----------------------------------------------------
-
-        submission_file = os.path.join(
-
-            SUBMISSIONS_DIR,
-
-            submission_id + ".json"
-
-        )
-
-
-        with open(
-            submission_file,
-            "w",
-            encoding="utf-8"
-        ) as file:
-
-            json.dump(
-                submission,
-                file,
-                indent=4
-            )
-
-
-        # ----------------------------------------------------
-        # Console information
-        # ----------------------------------------------------
 
         print()
         print(
             "========================================"
         )
         print(
-            "       PROCTIFY EXAM SUBMITTED"
+            "       PROCTIFY MYSQL EXAM SUBMITTED"
         )
         print(
             "========================================"
+        )
+        print(
+            "Submission ID:",
+            submission_id
         )
         print(
             "Student:",
@@ -3730,22 +5020,19 @@ def submit_exam(exam_id):
         )
         print(
             "Exam:",
-            exam.get(
-                "exam_name",
-                ""
-            )
+            exam["exam_name"]
         )
         print(
-            "Score:",
-            f"{score}%"
+            "Trust Score:",
+            trust_score
         )
         print(
-            "Correct:",
-            f"{correct_count}/{total_questions}"
+            "Automatic Score:",
+            automatic_score
         )
         print(
-            "Saved:",
-            submission_file
+            "Final Status:",
+            submission_status
         )
         print(
             "========================================"
@@ -3755,24 +5042,32 @@ def submit_exam(exam_id):
 
         return jsonify({
 
-            "success": True,
+            "success":
+                True,
 
             "message":
-                "Exam submitted successfully",
+                (
+                    "Exam evaluated and submitted successfully."
+                    if submission_status == "EVALUATED"
+                    else
+                    "Exam submitted and sent for teacher review."
+                ),
 
             "submission":
-                submission
+                submission_response
 
         })
 
 
-    except Exception as error:
+    except mysql.connector.Error as error:
+
+        if connection is not None:
+            connection.rollback()
 
         print(
-            "Exam submission error:",
+            "MySQL exam submission error:",
             error
         )
-
 
         return jsonify({
 
@@ -3782,6 +5077,35 @@ def submit_exam(exam_id):
                 str(error)
 
         }), 500
+
+
+    except Exception as error:
+
+        if connection is not None:
+            connection.rollback()
+
+        print(
+            "Exam submission error:",
+            error
+        )
+
+        return jsonify({
+
+            "success": False,
+
+            "error":
+                str(error)
+
+        }), 500
+
+    finally:
+
+        if cursor is not None:
+            cursor.close()
+
+        if connection is not None:
+            connection.close()
+
 
 # ============================================================
 # ============================================================

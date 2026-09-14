@@ -1350,11 +1350,17 @@ function updateTimerDisplay() {
 
 async function submitExam() {
 
+    /*
+     * Prevent accidental double submission.
+     */
+    if (window.examSubmitting) {
+        return;
+    }
+
     const answered =
         Object.keys(
             answers
         ).length;
-
 
     const confirmed =
         window.confirm(
@@ -1363,30 +1369,153 @@ async function submitExam() {
             answered +
             " of " +
             questions.length +
-            " questions.\n\n" +
+            " questions.\\n\\n" +
             "Submit this examination?"
 
         );
-
 
     if (!confirmed) {
         return;
     }
 
+    window.examSubmitting = true;
 
     clearInterval(
         timerInterval
     );
 
-
     /*
-     * Submission API will be connected
-     * in the next step.
+     * Disable the submit button while the request
+     * is being processed.
      */
+    const submitButton =
+        document.querySelector(
+            ".submit-button"
+        );
 
-    alert(
-        "Exam submission will be connected next."
-    );
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.innerText =
+            "Submitting...";
+    }
+
+    try {
+
+        /*
+         * Send ONLY the student's answers.
+         *
+         * The backend obtains the authenticated
+         * student_id from the Flask session and
+         * verifies the exam assignment in MySQL.
+         */
+        const response =
+            await fetch(
+                "/api/exams/" +
+                encodeURIComponent(
+                    examId
+                ) +
+                "/submit",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    credentials: "same-origin",
+
+                    body: JSON.stringify({
+                        answers: answers
+                    })
+                }
+            );
+
+        const data =
+            await response.json();
+
+        if (!response.ok || !data.success) {
+
+            throw new Error(
+                data.error ||
+                "Unable to submit examination."
+            );
+
+        }
+
+        const submission =
+            data.submission || {};
+
+        /*
+         * The backend decides whether the result is
+         * automatically evaluated or sent for teacher review.
+         */
+        if (
+            String(
+                submission.status || ""
+            ).toUpperCase() ===
+            "PENDING_REVIEW"
+        ) {
+
+            alert(
+                "Your examination has been submitted.\\n\\n" +
+                "Your Trust Score is below the automatic evaluation threshold, " +
+                "so your result has been sent for teacher review."
+            );
+
+        } else {
+
+            alert(
+                "Examination submitted successfully.\\n\\n" +
+                "Score: " +
+                (
+                    submission.score !== null &&
+                    submission.score !== undefined
+                        ? submission.score
+                        : "Pending"
+                ) +
+                "%\\n" +
+                "Trust Score: " +
+                (
+                    submission.trust_score !== null &&
+                    submission.trust_score !== undefined
+                        ? submission.trust_score
+                        : "--"
+                )
+            );
+
+        }
+
+        /*
+         * Return to the student dashboard after the
+         * MySQL submission has been successfully committed.
+         */
+        window.location.href =
+            "/student";
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Exam submission error:",
+            error
+        );
+
+        window.examSubmitting = false;
+
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.innerText =
+                "Submit Exam";
+        }
+
+        alert(
+            error.message ||
+            "Unable to submit examination. Please try again."
+        );
+
+    }
 
 }
 

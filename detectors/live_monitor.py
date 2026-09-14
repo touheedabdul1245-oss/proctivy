@@ -20,7 +20,6 @@ BASE_DIR = os.path.dirname(
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-
 import uuid
 import time
 import threading
@@ -30,20 +29,19 @@ from werkzeug.serving import make_server
 import sounddevice as sd
 import mediapipe as mp
 import json
-
 import re
+
 from ultralytics import YOLO
 
 from monitoring.monitoring_engine import MonitoringEngine
+
 
 # ============================================================
 # SHARED LIVE VIDEO FRAME
 # ============================================================
 
 latest_frame = None
-
 frame_lock = threading.Lock()
-
 
 
 # ============================================================
@@ -81,7 +79,6 @@ print()
 
 
 # ============================================================
-# ============================================================
 # PATHS
 # ============================================================
 
@@ -89,10 +86,18 @@ BASE_DIR = os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))
 )
 
+
+# ============================================================
+# NEW YOLO PHONE + EARPHONE MODEL
+# ============================================================
+
 YOLO_MODEL_PATH = os.path.join(
     BASE_DIR,
-    "models",
-    "phone_detector.pt"
+    "runs",
+    "detect",
+    "proctify_phone_earphone_v2",
+    "weights",
+    "best.pt"
 )
 
 
@@ -150,9 +155,7 @@ print("Monitoring engine ready.")
 # ============================================================
 
 status_lock = threading.Lock()
-# ============================================================
-# MONITORING HEALTH
-# ============================================================
+
 
 # ============================================================
 # MONITORING HEALTH
@@ -180,8 +183,9 @@ def calculate_risk(score):
 
 
 # ============================================================
-# UPDATE LIVE STATUS JSON
+# UPDATE LIVE STATUS
 # ============================================================
+
 def update_live_status(
     phone_count,
     person_count,
@@ -200,10 +204,6 @@ def update_live_status(
     status="ONLINE"
 ):
 
-    # ========================================================
-    # MYSQL IS THE PRIMARY LIVE DATA SOURCE
-    # ========================================================
-
     trust_score = int(
         monitoring_engine.get_trust_score()
     )
@@ -212,10 +212,6 @@ def update_live_status(
         monitoring_engine.get_risk_level()
     )
 
-
-    # ========================================================
-    # SYSTEM READINESS STATUS
-    # ========================================================
 
     camera_available = bool(
         CAMERA_AVAILABLE
@@ -244,80 +240,49 @@ def update_live_status(
 
         monitoring_engine.update_live_student(
 
-            student_id=
-                STUDENT_ID,
+            student_id=STUDENT_ID,
 
-            exam_name=
-                EXAM_NAME,
+            exam_name=EXAM_NAME,
 
-            status=
-                status,
+            status=status,
 
-            phone=
-                bool(phone_count > 0),
+            phone=bool(phone_count > 0),
 
-            phone_count=
-                int(phone_count),
+            phone_count=int(phone_count),
 
-            person_count=
-                int(person_count),
+            person_count=int(person_count),
 
-            face_count=
-                int(face_count),
+            face_count=int(face_count),
 
-            hand_count=
-                int(hand_count),
+            hand_count=int(hand_count),
 
-            gaze=
-                str(gaze),
+            gaze=str(gaze),
 
-            head_direction=
-                str(head_direction),
+            head_direction=str(head_direction),
 
-            audio=
-                str(audio_text),
+            audio=str(audio_text),
 
-            audio_volume=
-                float(audio_volume),
+            audio_volume=float(audio_volume),
 
+            camera_available=camera_available,
 
-            # ------------------------------------------------
-            # SYSTEM READINESS FLAGS
-            # ------------------------------------------------
+            audio_available=audio_ready,
 
-            camera_available=
-                camera_available,
+            ai_available=ai_ready,
 
-            audio_available=
-                audio_ready,
+            tab_available=tab_available,
 
-            ai_available=
-                ai_ready,
+            trust_score=trust_score,
 
-            tab_available=
-                tab_available,
-
-
-            trust_score=
-                trust_score,
-
-            risk_level=
-                risk_level
+            risk_level=risk_level
 
         )
 
     except Exception as error:
 
         print()
-
-        print(
-            "MYSQL LIVE STUDENT UPDATE ERROR:"
-        )
-
-        print(
-            error
-        )
-
+        print("MYSQL LIVE STUDENT UPDATE ERROR:")
+        print(error)
         print()
 
 
@@ -327,77 +292,49 @@ def update_live_status(
 
 def mark_student_offline():
 
-    # ========================================================
-    # MYSQL IS THE PRIMARY LIVE DATA SOURCE
-    # ========================================================
-
     try:
 
         monitoring_engine.update_live_student(
 
-            student_id=
-                STUDENT_ID,
+            student_id=STUDENT_ID,
 
-            exam_name=
-                EXAM_NAME,
+            exam_name=EXAM_NAME,
 
-            status=
-                "OFFLINE",
+            status="OFFLINE",
 
-            phone=
-                False,
+            phone=False,
 
-            phone_count=
-                0,
+            phone_count=0,
 
-            person_count=
-                0,
+            person_count=0,
 
-            face_count=
-                0,
+            face_count=0,
 
-            hand_count=
-                0,
+            hand_count=0,
 
-            gaze=
-                "NO FACE",
+            gaze="NO FACE",
 
-            head_direction=
-                "NO FACE",
+            head_direction="NO FACE",
 
-            audio=
-                "STOPPED",
+            audio="STOPPED",
 
-            audio_volume=
-                0.0,
+            audio_volume=0.0,
 
+            camera_available=False,
 
-            # ------------------------------------------------
-            # SYSTEM READINESS FLAGS
-            # ------------------------------------------------
+            audio_available=False,
 
-            camera_available=
-                False,
+            ai_available=False,
 
-            audio_available=
-                False,
+            tab_available=False,
 
-            ai_available=
-                False,
+            trust_score=int(
+                monitoring_engine.get_trust_score()
+            ),
 
-            tab_available=
-                False,
-
-
-            trust_score=
-                int(
-                    monitoring_engine.get_trust_score()
-                ),
-
-            risk_level=
-                str(
-                    monitoring_engine.get_risk_level()
-                )
+            risk_level=str(
+                monitoring_engine.get_risk_level()
+            )
 
         )
 
@@ -411,28 +348,32 @@ def mark_student_offline():
             "MYSQL OFFLINE UPDATE ERROR:",
             error
         )
+
+
 # ============================================================
 # YOLO
 # ============================================================
 
-print("Loading YOLO model...")
+print("Loading YOLO Phone + Earphone model...")
 
 yolo_model = YOLO(
     YOLO_MODEL_PATH
 )
 
 print(
-    "YOLO model loaded successfully."
+    "YOLO Phone + Earphone model loaded successfully."
 )
+
 AI_AVAILABLE = True
 
 
+# ============================================================
+# NEW YOLO CLASSES
+# ============================================================
+
 CLASS_NAMES = [
-    "book",
-    "extra_person",
-    "laptop",
     "phone",
-    "student"
+    "earphone"
 ]
 
 
@@ -524,11 +465,8 @@ print(
 # ============================================================
 
 SAMPLE_RATE = 48000
-
 CHANNELS = 1
-
 SPEECH_THRESHOLD = 0.0025
-
 VIOLATION_TIME = 1.5
 
 
@@ -537,11 +475,8 @@ VIOLATION_TIME = 1.5
 # ============================================================
 
 speaking_start = None
-
 audio_violation = False
-
 audio_volume = 0.0
-
 audio_lock = threading.Lock()
 
 
@@ -557,11 +492,8 @@ def audio_callback(
 ):
 
     global speaking_start
-
     global audio_violation
-
     global audio_volume
-
 
     if status:
 
@@ -570,23 +502,19 @@ def audio_callback(
             status
         )
 
-
     volume = np.sqrt(
         np.mean(
             np.square(indata)
         )
     )
 
-
     current_time = time.time()
-
 
     with audio_lock:
 
         audio_volume = float(
             volume
         )
-
 
         if volume > SPEECH_THRESHOLD:
 
@@ -596,12 +524,10 @@ def audio_callback(
                     current_time
                 )
 
-
             speaking_duration = (
                 current_time -
                 speaking_start
             )
-
 
             if (
                 speaking_duration >=
@@ -610,11 +536,9 @@ def audio_callback(
 
                 audio_violation = True
 
-
         else:
 
             speaking_start = None
-
             audio_violation = False
 
 
@@ -663,13 +587,10 @@ except Exception as error:
 # ============================================================
 
 LEFT_THRESHOLD = 0.60
-
 RIGHT_THRESHOLD = 0.40
-
 DOWN_THRESHOLD = 0.55
 
 EYES_CLOSED_TIME = 2.0
-
 EYE_CLOSED_THRESHOLD = 8
 
 eyes_closed_start = None
@@ -680,24 +601,15 @@ eyes_closed_start = None
 # ============================================================
 
 LEFT_EYE_LEFT = 33
-
 LEFT_EYE_RIGHT = 133
-
 LEFT_EYE_TOP = 159
-
 LEFT_EYE_BOTTOM = 145
-
 LEFT_IRIS = 468
 
-
 RIGHT_EYE_LEFT = 362
-
 RIGHT_EYE_RIGHT = 263
-
 RIGHT_EYE_TOP = 386
-
 RIGHT_EYE_BOTTOM = 374
-
 RIGHT_IRIS = 473
 
 
@@ -746,16 +658,13 @@ def horizontal_ratio(
         height
     )
 
-
     eye_width = np.linalg.norm(
         right - left
     )
 
-
     if eye_width == 0:
 
         return 0.5
-
 
     return np.linalg.norm(
         iris - left
@@ -789,16 +698,13 @@ def vertical_ratio(
         height
     )
 
-
     eye_height = np.linalg.norm(
         bottom - top
     )
 
-
     if eye_height == 0:
 
         return 0.5
-
 
     return np.linalg.norm(
         iris - top
@@ -813,174 +719,94 @@ def get_gaze(
 
     global eyes_closed_start
 
-
-    # --------------------------------------------------------
-    # Horizontal gaze
-    # --------------------------------------------------------
-
     left_horizontal = horizontal_ratio(
-
         face,
-
         LEFT_EYE_LEFT,
-
         LEFT_EYE_RIGHT,
-
         LEFT_IRIS,
-
         width,
-
         height
     )
-
 
     right_horizontal = horizontal_ratio(
-
         face,
-
         RIGHT_EYE_LEFT,
-
         RIGHT_EYE_RIGHT,
-
         RIGHT_IRIS,
-
         width,
-
         height
     )
-
 
     horizontal_value = (
-
         left_horizontal +
-
         right_horizontal
-
     ) / 2
 
-
-    # --------------------------------------------------------
-    # Vertical gaze
-    # --------------------------------------------------------
 
     left_vertical = vertical_ratio(
-
         face,
-
         LEFT_EYE_TOP,
-
         LEFT_EYE_BOTTOM,
-
         LEFT_IRIS,
-
         width,
-
         height
     )
-
 
     right_vertical = vertical_ratio(
-
         face,
-
         RIGHT_EYE_TOP,
-
         RIGHT_EYE_BOTTOM,
-
         RIGHT_IRIS,
-
         width,
-
         height
     )
 
-
     vertical_value = (
-
         left_vertical +
-
         right_vertical
-
     ) / 2
 
 
-    # --------------------------------------------------------
-    # Eye closure
-    # --------------------------------------------------------
-
     left_top = get_point(
-
         face[LEFT_EYE_TOP],
-
         width,
-
         height
     )
-
 
     left_bottom = get_point(
-
         face[LEFT_EYE_BOTTOM],
-
         width,
-
         height
     )
-
 
     right_top = get_point(
-
         face[RIGHT_EYE_TOP],
-
         width,
-
         height
     )
-
 
     right_bottom = get_point(
-
         face[RIGHT_EYE_BOTTOM],
-
         width,
-
         height
     )
 
-
     left_eye_height = np.linalg.norm(
-
-        left_bottom -
-
-        left_top
+        left_bottom - left_top
     )
-
 
     right_eye_height = np.linalg.norm(
-
-        right_bottom -
-
-        right_top
+        right_bottom - right_top
     )
-
 
     eyes_closed = (
-
         left_eye_height <
-
         EYE_CLOSED_THRESHOLD
-
         and
-
         right_eye_height <
-
         EYE_CLOSED_THRESHOLD
     )
 
-
-    # --------------------------------------------------------
-    # Closed-eye timer
-    # --------------------------------------------------------
 
     if eyes_closed:
 
@@ -988,25 +814,16 @@ def get_gaze(
 
             eyes_closed_start = time.time()
 
-
         closed_duration = (
-
             time.time() -
-
             eyes_closed_start
         )
-
 
     else:
 
         eyes_closed_start = None
-
         closed_duration = 0
 
-
-    # --------------------------------------------------------
-    # Gaze logic
-    # --------------------------------------------------------
 
     if closed_duration >= EYES_CLOSED_TIME:
 
@@ -1030,15 +847,10 @@ def get_gaze(
 
 
     return (
-
         gaze,
-
         horizontal_value,
-
         vertical_value,
-
         eyes_closed,
-
         closed_duration
     )
 
@@ -1071,13 +883,11 @@ model_points = np.array([
 CALIBRATION_FRAMES = 30
 
 calibration_yaws = []
-
 calibration_pitches = []
 
 calibration_complete = False
 
 calibration_yaw = 0.0
-
 calibration_pitch = 0.0
 
 
@@ -1093,7 +903,6 @@ def get_head_angles(
 
     focal_length = width
 
-
     camera_matrix = np.array([
 
         [focal_length, 0, width / 2],
@@ -1104,12 +913,10 @@ def get_head_angles(
 
     ], dtype=np.float64)
 
-
     dist_coeffs = np.zeros(
         (4, 1),
         dtype=np.float64
     )
-
 
     image_points = np.array([
 
@@ -1172,11 +979,9 @@ def get_head_angles(
         rotation_vector
     )
 
-
     angles = cv2.RQDecomp3x3(
         rotation_matrix
     )[0]
-
 
     pitch = float(
         angles[0]
@@ -1185,7 +990,6 @@ def get_head_angles(
     yaw = float(
         angles[1]
     )
-
 
     return yaw, pitch
 
@@ -1200,23 +1004,16 @@ def classify_head_pose(
 ):
 
     yaw_difference = (
-
         yaw -
-
         calibration_yaw
     )
 
-
     pitch_difference = (
-
         pitch -
-
         calibration_pitch
     )
 
-
     YAW_THRESHOLD = 20
-
     DOWN_THRESHOLD = 15
 
 
@@ -1224,16 +1021,13 @@ def classify_head_pose(
 
         return "LOOK_RIGHT"
 
-
     elif yaw_difference < -YAW_THRESHOLD:
 
         return "LOOK_LEFT"
 
-
     elif pitch_difference > DOWN_THRESHOLD:
 
         return "LOOK_DOWN"
-
 
     else:
 
@@ -1256,13 +1050,15 @@ if not cap.isOpened():
     if audio_stream is not None:
 
         audio_stream.stop()
-
         audio_stream.close()
 
     monitoring_engine = None
 
     exit()
+
+
 CAMERA_AVAILABLE = True
+
 
 # ============================================================
 # LIVE VIDEO STREAM SERVER
@@ -1313,20 +1109,15 @@ def video_feed():
 
 def start_video_server():
 
-    # --------------------------------------------------------
-    # Each student gets a different video port
-    # STUDENT_001 -> 5001
-    # STUDENT_002 -> 5002
-    # STUDENT_003 -> 5003
-    # --------------------------------------------------------
-
     try:
+
         student_match = re.search(
             r"(\d+)$",
             str(STUDENT_ID)
         )
 
         if student_match is None:
+
             raise ValueError(
                 "Student ID has no trailing number."
             )
@@ -1336,6 +1127,7 @@ def start_video_server():
         )
 
     except (ValueError, IndexError):
+
         student_number = 1
 
 
@@ -1347,6 +1139,7 @@ def start_video_server():
         f" http://127.0.0.1:{video_port}/video_feed"
     )
 
+
     try:
 
         server = make_server(
@@ -1357,7 +1150,7 @@ def start_video_server():
         )
 
         print(
-            "Live video stream available at:"
+            "Live video stream available."
         )
 
         print(
@@ -1366,11 +1159,14 @@ def start_video_server():
 
         server.serve_forever()
 
+
     except Exception as e:
 
         print(
             f"ERROR: Student video server failed: {e}"
         )
+
+
 video_server_thread = threading.Thread(
     target=start_video_server,
     daemon=True
@@ -1378,36 +1174,33 @@ video_server_thread = threading.Thread(
 
 video_server_thread.start()
 
+
 print(
-    "Live video stream available at:"
+    "Live video stream available."
 )
 
 print(
     "Student-specific video port is assigned automatically."
 )
+
+
 # ============================================================
 # VIOLATION COOLDOWNS
 # ============================================================
 
 PHONE_COOLDOWN = 5
-
+EARPHONE_COOLDOWN = 5
 PERSON_COOLDOWN = 5
-
 GAZE_COOLDOWN = 5
-
 AUDIO_COOLDOWN = 5
-
 NO_FACE_COOLDOWN = 5
 
 
 last_phone_violation = 0
-
+last_earphone_violation = 0
 last_person_violation = 0
-
 last_gaze_violation = 0
-
 last_audio_violation = 0
-
 last_noface_violation = 0
 
 
@@ -1426,7 +1219,7 @@ update_live_status(
 
     phone_count=0,
 
-    person_count=1,
+    person_count=0,
 
     face_count=0,
 
@@ -1480,7 +1273,7 @@ try:
 
 
         # ====================================================
-        # YOLO
+        # YOLO — PHONE + EARPHONE ONLY
         # ====================================================
 
         results = yolo_model(
@@ -1494,8 +1287,7 @@ try:
 
 
         phone_count = 0
-
-        person_count = 0
+        earphone_count = 0
 
         current_time = time.time()
 
@@ -1507,7 +1299,6 @@ try:
                 class_id = int(
                     box.cls[0]
                 )
-
 
                 confidence = float(
                     box.conf[0]
@@ -1526,35 +1317,18 @@ try:
                 )
 
 
-                # ------------------------------------------------
-                # Hide book
-                # ------------------------------------------------
-
-                if class_name == "book":
-
-                    continue
-
-
                 if class_name == "phone":
 
                     phone_count += 1
 
 
-                elif class_name in [
+                elif class_name == "earphone":
 
-                    "student",
-
-                    "extra_person"
-
-                ]:
-
-                    person_count += 1
+                    earphone_count += 1
 
 
                 x1, y1, x2, y2 = map(
-
                     int,
-
                     box.xyxy[0]
                 )
 
@@ -1598,122 +1372,6 @@ try:
 
 
         # ====================================================
-        # PHONE VIOLATION
-        # ====================================================
-
-        if phone_count > 0:
-
-            if calibration_complete:
-
-                if (
-
-                    current_time -
-
-                    last_phone_violation
-
-                    >= PHONE_COOLDOWN
-
-                ):
-
-                    monitoring_engine.record_violation(
-
-                        "PHONE_DETECTED",
-
-                        severity="HIGH",
-
-                        description=(
-                            "Phone detected "
-                            "during examination."
-                        )
-                    )
-
-
-                    last_phone_violation = (
-                        current_time
-                    )
-
-
-                    last_event = (
-                        "PHONE DETECTED"
-                    )
-
-
-                    try:
-
-                        monitoring_engine.save_evidence(
-
-                            frame,
-
-                            "PHONE_DETECTED"
-                        )
-
-                    except Exception as error:
-
-                        print(
-                            "Evidence error:",
-                            error
-                        )
-
-
-        # ====================================================
-        # MULTIPLE PERSON VIOLATION
-        # ====================================================
-
-        if person_count > 1:
-
-            if calibration_complete:
-
-                if (
-
-                    current_time -
-
-                    last_person_violation
-
-                    >= PERSON_COOLDOWN
-
-                ):
-
-                    monitoring_engine.record_violation(
-
-                        "MULTIPLE_PERSON",
-
-                        severity="HIGH",
-
-                        description=(
-                            "Multiple persons "
-                            "detected in examination area."
-                        )
-                    )
-
-
-                    last_person_violation = (
-                        current_time
-                    )
-
-
-                    last_event = (
-                        "MULTIPLE PERSONS"
-                    )
-
-
-                    try:
-
-                        monitoring_engine.save_evidence(
-
-                            frame,
-
-                            "MULTIPLE_PERSON"
-                        )
-
-                    except Exception as error:
-
-                        print(
-                            "Evidence error:",
-                            error
-                        )
-
-
-        # ====================================================
         # MEDIAPIPE IMAGE
         # ====================================================
 
@@ -1747,9 +1405,25 @@ try:
 
 
         face_count = len(
-
             face_result.face_landmarks
         )
+
+
+        # ====================================================
+        # PERSON COUNT FROM MEDIAPIPE
+        # ====================================================
+
+        if face_count == 0:
+
+            person_count = 0
+
+        elif face_count == 1:
+
+            person_count = 1
+
+        else:
+
+            person_count = face_count
 
 
         gaze = "NO FACE"
@@ -1757,15 +1431,12 @@ try:
         head_direction = "NO FACE"
 
         horizontal_value = 0
-
         vertical_value = 0
 
         yaw = 0
-
         pitch = 0
 
         eyes_closed = False
-
         closed_duration = 0
 
 
@@ -1776,33 +1447,62 @@ try:
         if face_count > 0:
 
             face = (
-
                 face_result.face_landmarks[0]
             )
+            # ------------------------------------------------
+            # DRAW MEDIAPIPE FACE BOUNDING BOX
+            # ------------------------------------------------
 
+            face_x = [
+                landmark.x * width
+                for landmark in face
+            ]
+
+            face_y = [
+                landmark.y * height
+                for landmark in face
+            ]
+
+            x_min = max(0, int(min(face_x)))
+            y_min = max(0, int(min(face_y)))
+
+            x_max = min(width - 1, int(max(face_x)))
+            y_max = min(height - 1, int(max(face_y)))
+
+
+            cv2.rectangle(
+                frame,
+                (x_min, y_min),
+                (x_max, y_max),
+                (255, 0, 255),
+                2
+            )
+
+            cv2.putText(
+                frame,
+                "PERSON",
+                (x_min, max(y_min - 10, 20)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (255, 0, 255),
+                2
+            )
 
             # ------------------------------------------------
             # GAZE
             # ------------------------------------------------
 
             (
-
                 gaze,
-
                 horizontal_value,
-
                 vertical_value,
-
                 eyes_closed,
-
                 closed_duration
 
             ) = get_gaze(
 
                 face,
-
                 width,
-
                 height
             )
 
@@ -1816,9 +1516,7 @@ try:
                 get_head_angles(
 
                     face,
-
                     width,
-
                     height
                 )
             )
@@ -1827,7 +1525,6 @@ try:
             if raw_yaw is not None:
 
                 yaw = raw_yaw
-
                 pitch = raw_pitch
 
 
@@ -1892,7 +1589,6 @@ try:
                         calibration_yaw = float(
 
                             np.mean(
-
                                 calibration_yaws
                             )
                         )
@@ -1901,14 +1597,12 @@ try:
                         calibration_pitch = float(
 
                             np.mean(
-
                                 calibration_pitches
                             )
                         )
 
 
                         calibration_complete = True
-
 
                         last_event = (
                             "CALIBRATION COMPLETE"
@@ -1953,7 +1647,6 @@ try:
                         classify_head_pose(
 
                             raw_yaw,
-
                             raw_pitch
                         )
                     )
@@ -1964,27 +1657,19 @@ try:
             # ------------------------------------------------
 
             for idx in [
-
                 LEFT_IRIS,
-
                 RIGHT_IRIS
-
             ]:
 
                 point = face[idx]
 
-
                 x = int(
-
                     point.x * width
                 )
 
-
                 y = int(
-
                     point.y * height
                 )
-
 
                 cv2.circle(
 
@@ -2023,6 +1708,185 @@ try:
 
                     2
                 )
+
+
+        # ====================================================
+        # MULTIPLE PERSON VIOLATION
+        # ====================================================
+
+        if (
+
+            face_count > 1
+
+            and calibration_complete
+
+        ):
+
+            if (
+
+                current_time -
+
+                last_person_violation
+
+                >= PERSON_COOLDOWN
+
+            ):
+
+                monitoring_engine.record_violation(
+
+                    "MULTIPLE_PERSON",
+
+                    severity="HIGH",
+
+                    description=(
+                        "Multiple persons "
+                        "detected using MediaPipe "
+                        "face detection."
+                    )
+                )
+
+
+                last_person_violation = (
+                    current_time
+                )
+
+
+                last_event = (
+                    "MULTIPLE PERSONS"
+                )
+
+
+                try:
+
+                    monitoring_engine.save_evidence(
+
+                        frame,
+
+                        "MULTIPLE_PERSON"
+                    )
+
+                except Exception as error:
+
+                    print(
+                        "Evidence error:",
+                        error
+                    )
+
+
+        # ====================================================
+        # PHONE VIOLATION
+        # ====================================================
+
+        if phone_count > 0:
+
+            if calibration_complete:
+
+                if (
+
+                    current_time -
+
+                    last_phone_violation
+
+                    >= PHONE_COOLDOWN
+
+                ):
+
+                    monitoring_engine.record_violation(
+
+                        "PHONE_DETECTED",
+
+                        severity="HIGH",
+
+                        description=(
+                            "Phone detected "
+                            "during examination."
+                        )
+                    )
+
+
+                    last_phone_violation = (
+                        current_time
+                    )
+
+
+                    last_event = (
+                        "PHONE DETECTED"
+                    )
+
+
+                    try:
+
+                        monitoring_engine.save_evidence(
+
+                            frame,
+
+                            "PHONE_DETECTED"
+                        )
+
+                    except Exception as error:
+
+                        print(
+                            "Evidence error:",
+                            error
+                        )
+
+
+        # ====================================================
+        # EARPHONE VIOLATION
+        # ====================================================
+
+        if earphone_count > 0:
+
+            if calibration_complete:
+
+                if (
+
+                    current_time -
+
+                    last_earphone_violation
+
+                    >= EARPHONE_COOLDOWN
+
+                ):
+
+                    monitoring_engine.record_violation(
+
+                        "EARPHONE_DETECTED",
+
+                        severity="HIGH",
+
+                        description=(
+                            "Earphone detected "
+                            "during examination."
+                        )
+                    )
+
+
+                    last_earphone_violation = (
+                        current_time
+                    )
+
+
+                    last_event = (
+                        "EARPHONE DETECTED"
+                    )
+
+
+                    try:
+
+                        monitoring_engine.save_evidence(
+
+                            frame,
+
+                            "EARPHONE_DETECTED"
+                        )
+
+                    except Exception as error:
+
+                        print(
+                            "Evidence error:",
+                            error
+                        )
 
 
         # ====================================================
@@ -2079,9 +1943,7 @@ try:
             gaze in [
 
                 "LOOKING_LEFT",
-
                 "LOOKING_RIGHT",
-
                 "LOOKING_DOWN"
 
             ]
@@ -2207,26 +2069,21 @@ try:
 
 
         hand_count = len(
-
             hand_result.hand_landmarks
         )
 
 
         for hand in (
-
             hand_result.hand_landmarks
         ):
 
             for landmark in hand:
 
                 x = int(
-
                     landmark.x * width
                 )
 
-
                 y = int(
-
                     landmark.y * height
                 )
 
@@ -2265,7 +2122,6 @@ try:
                 speaking_duration = (
 
                     time.time() -
-
                     speaking_start
                 )
 
@@ -2285,7 +2141,6 @@ try:
         elif speaking_start is not None:
 
             audio_text = (
-
                 f"SPEAKING "
                 f"{speaking_duration:.1f}s"
             )
@@ -2377,7 +2232,7 @@ try:
 
             frame,
 
-            f"Persons: {person_count}",
+            f"Earphone: {earphone_count}",
 
             (20, 60),
 
@@ -2395,7 +2250,7 @@ try:
 
             frame,
 
-            f"Faces: {face_count}",
+            f"Persons: {person_count}",
 
             (20, 90),
 
@@ -2403,7 +2258,7 @@ try:
 
             0.65,
 
-            (255, 255, 0),
+            (0, 255, 255),
 
             2
         )
@@ -2413,7 +2268,7 @@ try:
 
             frame,
 
-            f"Hands: {hand_count}",
+            f"Faces: {face_count}",
 
             (20, 120),
 
@@ -2431,9 +2286,27 @@ try:
 
             frame,
 
-            f"Gaze: {gaze}",
+            f"Hands: {hand_count}",
 
             (20, 155),
+
+            cv2.FONT_HERSHEY_SIMPLEX,
+
+            0.65,
+
+            (255, 255, 0),
+
+            2
+        )
+
+
+        cv2.putText(
+
+            frame,
+
+            f"Gaze: {gaze}",
+
+            (20, 190),
 
             cv2.FONT_HERSHEY_SIMPLEX,
 
@@ -2451,7 +2324,7 @@ try:
 
             f"Head: {head_direction}",
 
-            (20, 190),
+            (20, 225),
 
             cv2.FONT_HERSHEY_SIMPLEX,
 
@@ -2469,7 +2342,7 @@ try:
 
             f"Audio: {audio_text}",
 
-            (20, 225),
+            (20, 260),
 
             cv2.FONT_HERSHEY_SIMPLEX,
 
@@ -2487,7 +2360,7 @@ try:
 
             f"Volume: {current_volume:.4f}",
 
-            (20, 255),
+            (20, 290),
 
             cv2.FONT_HERSHEY_SIMPLEX,
 
@@ -2505,7 +2378,7 @@ try:
 
             f"Yaw: {yaw:.1f}",
 
-            (20, 285),
+            (20, 320),
 
             cv2.FONT_HERSHEY_SIMPLEX,
 
@@ -2523,7 +2396,7 @@ try:
 
             f"Pitch: {pitch:.1f}",
 
-            (20, 315),
+            (20, 350),
 
             cv2.FONT_HERSHEY_SIMPLEX,
 
@@ -2547,7 +2420,7 @@ try:
 
                 "HEAD CALIBRATED",
 
-                (20, 350),
+                (20, 385),
 
                 cv2.FONT_HERSHEY_SIMPLEX,
 
@@ -2571,7 +2444,31 @@ try:
 
                 "!!! AUDIO VIOLATION !!!",
 
-                (20, 390),
+                (20, 420),
+
+                cv2.FONT_HERSHEY_SIMPLEX,
+
+                0.8,
+
+                (0, 0, 255),
+
+                2
+            )
+
+
+        # ====================================================
+        # MULTIPLE PERSON ALERT
+        # ====================================================
+
+        if face_count > 1:
+
+            cv2.putText(
+
+                frame,
+
+                "!!! MULTIPLE PERSONS !!!",
+
+                (20, 455),
 
                 cv2.FONT_HERSHEY_SIMPLEX,
 
@@ -2591,44 +2488,56 @@ try:
             monitoring_engine.get_trust_score()
         )
 
-
         risk_level = (
             monitoring_engine.get_risk_level()
         )
 
+        # Keep Trust Score visible on all webcam resolutions.
+        # The previous fixed Y positions (490/525) could place
+        # the text outside a smaller camera frame.
+
+        panel_x = max(
+            10,
+            width - 310
+        )
+
+        panel_y = 10
+
+        panel_width = min(
+            300,
+            width - panel_x - 10
+        )
+
+        panel_height = 82
+
+        cv2.rectangle(
+            frame,
+            (panel_x, panel_y),
+            (
+                panel_x + panel_width,
+                panel_y + panel_height
+            ),
+            (0, 0, 0),
+            -1
+        )
 
         cv2.putText(
-
             frame,
-
-            f"Trust Score: {trust_score}",
-
-            (20, 430),
-
+            f"Trust Score: {int(trust_score)}",
+            (panel_x + 10, panel_y + 32),
             cv2.FONT_HERSHEY_SIMPLEX,
-
             0.7,
-
             (0, 255, 0),
-
             2
         )
 
-
         cv2.putText(
-
             frame,
-
             f"Risk: {risk_level}",
-
-            (20, 465),
-
+            (panel_x + 10, panel_y + 65),
             cv2.FONT_HERSHEY_SIMPLEX,
-
             0.7,
-
             (0, 255, 255),
-
             2
         )
 
@@ -2670,38 +2579,24 @@ try:
             status="ONLINE"
         )
 
+
         # ====================================================
-# UPDATE BROWSER LIVE FRAME
-# ====================================================
+        # UPDATE BROWSER LIVE FRAME
+        # ====================================================
 
         with frame_lock:
 
             latest_frame = frame.copy()
-        # ====================================================
-        # DISPLAY
-        # ====================================================
-
-        cv2.imshow(
-
-            "PROCTIFY - Live Monitor",
-
-            frame
-        )
 
 
         # ====================================================
-        # QUIT
+        # HEADLESS MODE
         # ====================================================
-
-        if (
-
-            cv2.waitKey(1) & 0xFF
-
-            == ord("q")
-
-        ):
-
-            break
+        # Do not open an OpenCV window on the student's PC.
+        # The processed frame is already stored in latest_frame
+        # above for the future cloud live-streaming layer.
+        # AI processing, Trust Score, MySQL updates, violations,
+        # and evidence capture continue normally.
 
 
 finally:
@@ -2711,14 +2606,6 @@ finally:
     # ========================================================
 
     report_path = monitoring_engine.generate_report()
-
-    # ========================================================
-    # MYSQL ALREADY CONTAINS THE REAL STUDENT / EXAM IDENTITY
-    # ========================================================
-
-    # The MonitoringEngine was initialized with STUDENT_ID and EXAM_NAME.
-    # Any generated JSON report is only a secondary export; MySQL remains
-    # the primary source for sessions, violations, evidence, and reports.
 
     # ========================================================
     # MARK STUDENT OFFLINE
@@ -2737,7 +2624,6 @@ finally:
     if audio_stream is not None:
 
         audio_stream.stop()
-
         audio_stream.close()
 
 
@@ -2749,23 +2635,29 @@ finally:
 
 
     print()
+
     print(
         "========================================"
     )
+
     print(
         "PROCTIFY LIVE MONITOR STOPPED"
     )
+
     print(
         f"Student: {STUDENT_ID}"
     )
+
     print(
         f"Final Trust Score: "
         f"{monitoring_engine.get_trust_score()}"
     )
+
     print(
         f"Final Risk: "
         f"{monitoring_engine.get_risk_level()}"
     )
+
     print(
         "========================================"
     )
