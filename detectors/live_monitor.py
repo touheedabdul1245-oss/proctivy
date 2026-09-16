@@ -37,6 +37,26 @@ from monitoring.monitoring_engine import MonitoringEngine
 
 
 # ============================================================
+# CENTRAL SERVER CONFIGURATION
+# ============================================================
+
+PROCTIFY_SERVER_URL = os.getenv(
+    "PROCTIFY_SERVER_URL",
+    ""
+).strip().rstrip("/")
+
+if PROCTIFY_SERVER_URL:
+    print(
+        f"Central PROCTIFY server: {PROCTIFY_SERVER_URL}"
+    )
+else:
+    print(
+        "WARNING: PROCTIFY_SERVER_URL is not configured. "
+        "Monitoring will use local MySQL mode."
+    )
+
+
+# ============================================================
 # SHARED LIVE VIDEO FRAME
 # ============================================================
 
@@ -65,6 +85,10 @@ if len(sys.argv) < 4:
 STUDENT_ID = str(sys.argv[1]).strip()
 SESSION_ID = str(sys.argv[2]).strip()
 EXAM_NAME = " ".join(sys.argv[3:]).strip()
+
+if not STUDENT_ID or not SESSION_ID or not EXAM_NAME:
+    print("ERROR: Missing student/session/exam information.")
+    sys.exit(1)
 
 
 print()
@@ -1732,7 +1756,7 @@ try:
 
             ):
 
-                monitoring_engine.record_violation(
+                violation_id = monitoring_engine.record_violation(
 
                     "MULTIPLE_PERSON",
 
@@ -2166,7 +2190,7 @@ try:
 
             ):
 
-                monitoring_engine.record_violation(
+                violation_id = monitoring_engine.record_violation(
 
                     "AUDIO_VIOLATION",
 

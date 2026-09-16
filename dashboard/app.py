@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, session, redirect, send_file
+from flask import Flask, render_template, jsonify, request, session, redirect, send_file, Response
 import mysql.connector
 import html as html_lib
 import json
@@ -9,6 +9,8 @@ import cv2
 import mediapipe as mp
 import subprocess
 import sys
+import threading
+import time
 from datetime import datetime, timedelta
 
 
@@ -97,6 +99,13 @@ monitor_processes = {}
 # Stores the MySQL-linked monitoring session ID for each
 # currently running student monitor process.
 monitor_session_ids = {}
+
+# Central-server heartbeat state for distributed student agents.
+# This is intentionally in-memory because live presence is ephemeral;
+# MySQL remains the authoritative store for persistent monitoring data.
+CENTRAL_LIVE_HEARTBEATS = {}
+CENTRAL_LIVE_TIMEOUT = 4.0
+CENTRAL_LIVE_LOCK = threading.Lock()
 
 
 # ============================================================
@@ -1427,7 +1436,8 @@ def student_exam(exam_id):
     return render_template(
         "student_exam.html",
         exam_id=exam_id,
-        student_id=session.get("student_id")
+        student_id=session.get("student_id"),
+        student_agent_url=STUDENT_AGENT_URL
     )
 
 
@@ -1661,67 +1671,87 @@ def is_live_monitor_running(student_id):
 
 @app.route("/api/status")
 def api_status():
+    """
+    Return currently-live students using MySQL as the authoritative
+    cross-process source.
 
-    students = [
+    A heartbeat updates live_students.last_update on every ONLINE
+    heartbeat. Students are live only when:
+      - status = ONLINE
+      - last_update is within the last 5 seconds
 
-        normalize_student(
-            student
-        )
+    This avoids process-local CENTRAL_LIVE_HEARTBEATS being different
+    between Flask workers/reloader processes.
+    """
+    connection = None
+    cursor = None
 
-        for student in get_students()
+    try:
+        connection = get_database_connection()
 
-    ]
+        if connection is None:
+            return jsonify({
+                "success": False,
+                "error": "Unable to connect to MySQL.",
+                "system": "PROCTIFY",
+                "student_count": 0,
+                "online_students": 0,
+                "students": []
+            }), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT
+                ls.*,
+                (
+                    SELECT REPLACE(v.violation_type, '_', ' ')
+                    FROM violations v
+                    WHERE v.session_id = ls.session_id
+                    ORDER BY v.timestamp DESC
+                    LIMIT 1
+                ) AS last_event
+            FROM live_students ls
+            WHERE UPPER(ls.status) = 'ONLINE'
+              AND ls.last_update >= (NOW() - INTERVAL 5 SECOND)
+            ORDER BY ls.student_id ASC
+        """)
+
+        rows = cursor.fetchall()
+
+        students = [
+            normalize_student(row)
+            for row in rows
+            if isinstance(row, dict)
+        ]
+
+        return jsonify({
+            "success": True,
+            "system": "PROCTIFY",
+            "last_update": datetime.now().strftime("%H:%M:%S"),
+            "student_count": len(students),
+            "students": students,
+            "online_students": len(students)
+        })
+
+    except Exception as error:
+        print("Live status API error:", error)
+        return jsonify({
+            "success": False,
+            "error": str(error),
+            "system": "PROCTIFY",
+            "student_count": 0,
+            "online_students": 0,
+            "students": []
+        }), 500
+
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
 
 
-    online_students = [
-
-        student
-
-        for student in students
-
-        if (
-            str(
-                student.get(
-                    "status",
-                    ""
-                )
-            ).upper() == "ONLINE"
-        )
-
-    ]
-
-    # IMPORTANT:
-    # The teacher dashboard must show a student card only while
-    # that student's live_monitor.py process is actually running.
-    # A stale ONLINE row in MySQL must never create a live card.
-
-
-    return jsonify({
-
-        "success": True,
-
-        "system":
-            "PROCTIFY",
-
-        "last_update":
-            datetime.now().strftime(
-                "%H:%M:%S"
-            ),
-
-        "student_count":
-            len(
-                online_students
-            ),
-
-        "students":
-            online_students,
-
-        "online_students":
-            len(
-                online_students
-            )
-
-    })
 # ============================================================
 # API - VERIFY STUDENT FACE
 # ============================================================
@@ -4024,6 +4054,755 @@ table{{width:100%;border-collapse:collapse}}th,td{{border:1px solid #ddd;padding
 
 
 # ============================================================
+# DISTRIBUTED MONITORING / LIVE VIDEO
+# ============================================================
+# Student PCs run the AI monitor locally. These endpoints are the
+# central-server bridge. MySQL remains the authoritative data source
+# for monitoring state, violations, evidence and completed sessions.
+# Processed video is ephemeral and kept in server memory only.
+# ============================================================
+
+LIVE_VIDEO_FRAMES = {}
+LIVE_VIDEO_LOCK = threading.Lock()
+LIVE_VIDEO_MAX_AGE = 5.0
+
+
+def _monitor_json_datetime(value):
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
+
+
+@app.route("/api/monitor/live-status", methods=["POST"])
+def monitor_live_status():
+    connection = None
+    cursor = None
+
+    try:
+        data = request.get_json(silent=True) or {}
+
+        student_id = str(data.get("student_id", "")).strip()
+        session_id = str(data.get("session_id", "")).strip()
+        exam_name = str(data.get("exam_name", "PROCTIFY EXAM")).strip()
+        status = str(data.get("status", "OFFLINE")).strip().upper()
+
+        if not student_id or not session_id:
+            return jsonify({
+                "success": False,
+                "error": "student_id and session_id are required."
+            }), 400
+
+        if status not in {"ONLINE", "OFFLINE"}:
+            return jsonify({
+                "success": False,
+                "error": "Invalid monitoring status."
+            }), 400
+
+        # Maintain a short-lived central heartbeat so the teacher dashboard
+        # reflects real activity instead of stale SQL ONLINE rows.
+        with CENTRAL_LIVE_LOCK:
+            if status == "ONLINE":
+                CENTRAL_LIVE_HEARTBEATS[student_id] = {
+                    "session_id": session_id,
+                    "updated": time.monotonic()
+                }
+            else:
+                CENTRAL_LIVE_HEARTBEATS.pop(student_id, None)
+
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({
+                "success": False,
+                "error": "Unable to connect to MySQL."
+            }), 500
+
+        cursor = connection.cursor()
+
+        values = (
+            student_id,
+            session_id,
+            exam_name,
+            status,
+            int(data.get("trust_score", 100) if data.get("trust_score") is not None else 100),
+            str(data.get("risk_level", "LOW")),
+            int(bool(data.get("phone", False))),
+            int(data.get("phone_count", 0) or 0),
+            int(data.get("person_count", 0) or 0),
+            int(data.get("face_count", 0) or 0),
+            int(data.get("hand_count", 0) or 0),
+            str(data.get("gaze", "NO FACE")),
+            str(data.get("head_direction", "NO FACE")),
+            str(data.get("audio", "LISTENING")),
+            float(data.get("audio_volume", 0) or 0),
+            int(bool(data.get("camera_available", False))),
+            int(bool(data.get("audio_available", False))),
+            int(bool(data.get("ai_available", False))),
+            int(bool(data.get("tab_available", False)))
+        )
+
+        # MySQL UPSERT: update existing student or insert a new one.
+        # last_update is the shared, database-backed heartbeat timestamp.
+        upsert_sql = """
+            INSERT INTO live_students
+            (
+                student_id, session_id, exam_name, status,
+                trust_score, risk_level,
+                phone, phone_count, person_count, face_count,
+                hand_count, gaze, head_direction,
+                audio, audio_volume,
+                camera_available, audio_available,
+                ai_available, tab_available, last_update
+            )
+            VALUES
+            (
+                %s, %s, %s, %s,
+                %s, %s,
+                %s, %s, %s, %s,
+                %s, %s, %s,
+                %s, %s,
+                %s, %s, %s, %s, NOW()
+            )
+            ON DUPLICATE KEY UPDATE
+                session_id = VALUES(session_id),
+                exam_name = VALUES(exam_name),
+                status = VALUES(status),
+                trust_score = VALUES(trust_score),
+                risk_level = VALUES(risk_level),
+                phone = VALUES(phone),
+                phone_count = VALUES(phone_count),
+                person_count = VALUES(person_count),
+                face_count = VALUES(face_count),
+                hand_count = VALUES(hand_count),
+                gaze = VALUES(gaze),
+                head_direction = VALUES(head_direction),
+                audio = VALUES(audio),
+                audio_volume = VALUES(audio_volume),
+                camera_available = VALUES(camera_available),
+                audio_available = VALUES(audio_available),
+                ai_available = VALUES(ai_available),
+                tab_available = VALUES(tab_available),
+                last_update = NOW()
+        """
+
+        cursor.execute(upsert_sql, values)
+
+        connection.commit()
+
+        return jsonify({
+            "success": True,
+            "student_id": student_id,
+            "session_id": session_id,
+            "status": status
+        })
+
+    except Exception as error:
+        if connection is not None:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+        print("Central live-status error:", error)
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 500
+
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+@app.route("/api/monitor/violation", methods=["POST"])
+def monitor_violation():
+    connection = None
+    cursor = None
+
+    try:
+        data = request.get_json(silent=True) or {}
+
+        session_id = str(data.get("session_id", "")).strip()
+        student_id = str(data.get("student_id", "")).strip()
+        violation_type = str(data.get("violation_type", "")).strip()
+        severity = str(data.get("severity", "MEDIUM")).strip()
+        description = str(data.get("description", "")).strip()
+        penalty = int(data.get("penalty", 0) or 0)
+        old_score = int(data.get("old_score", 100) or 100)
+        new_score = int(data.get("new_score", 100) or 100)
+
+        if not session_id or not student_id or not violation_type:
+            return jsonify({
+                "success": False,
+                "error": "session_id, student_id and violation_type are required."
+            }), 400
+
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({
+                "success": False,
+                "error": "Unable to connect to MySQL."
+            }), 500
+
+        cursor = connection.cursor()
+
+        cursor.execute("""
+            INSERT INTO violations
+            (
+                session_id,
+                violation_type,
+                severity,
+                penalty,
+                description
+            )
+            VALUES (%s, %s, %s, %s, %s)
+        """, (
+            session_id,
+            violation_type,
+            severity,
+            penalty,
+            description
+        ))
+
+        violation_id = cursor.lastrowid
+
+        cursor.execute("""
+            INSERT INTO trust_score_history
+            (
+                session_id,
+                old_score,
+                new_score,
+                reason
+            )
+            VALUES (%s, %s, %s, %s)
+        """, (
+            session_id,
+            old_score,
+            new_score,
+            violation_type
+        ))
+
+        # Keep the authoritative live student row synchronized with the
+        # score calculated by the student-side AI engine.
+        cursor.execute("""
+            UPDATE live_students
+            SET trust_score = %s,
+                risk_level = CASE
+                    WHEN %s >= 80 THEN 'LOW'
+                    WHEN %s >= 50 THEN 'MEDIUM'
+                    ELSE 'HIGH'
+                END
+            WHERE student_id = %s
+              AND session_id = %s
+        """, (
+            new_score,
+            new_score,
+            new_score,
+            student_id,
+            session_id
+        ))
+
+        connection.commit()
+
+        return jsonify({
+            "success": True,
+            "violation_id": int(violation_id)
+        })
+
+    except Exception as error:
+        if connection is not None:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+        print("Central violation error:", error)
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 500
+
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+@app.route("/api/monitor/evidence", methods=["POST"])
+def monitor_evidence():
+    connection = None
+    cursor = None
+
+    try:
+        session_id = str(request.form.get("session_id", "")).strip()
+        student_id = str(request.form.get("student_id", "")).strip()
+        violation_type = str(request.form.get("violation_type", "VIOLATION")).strip()
+        violation_id_raw = str(request.form.get("violation_id", "")).strip()
+        uploaded = request.files.get("evidence")
+
+        if not session_id or not student_id or uploaded is None:
+            return jsonify({
+                "success": False,
+                "error": "session_id, student_id and evidence image are required."
+            }), 400
+
+        safe_type = "".join(
+            ch if ch.isalnum() or ch in "-_" else "_"
+            for ch in violation_type
+        ) or "VIOLATION"
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        filename = f"{safe_type}_{student_id}_{timestamp}.jpg"
+        evidence_dir = os.path.join(BASE_DIR, "reports", "evidence")
+        os.makedirs(evidence_dir, exist_ok=True)
+        file_path = os.path.join(evidence_dir, filename)
+
+        uploaded.save(file_path)
+
+        if not os.path.isfile(file_path):
+            return jsonify({
+                "success": False,
+                "error": "Evidence image could not be saved."
+            }), 500
+
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({
+                "success": False,
+                "error": "Unable to connect to MySQL."
+            }), 500
+
+        cursor = connection.cursor()
+
+        # Use the exact violation created by the monitoring engine when
+        # available. Keep the old same-session/type lookup as a compatibility
+        # fallback for older agents.
+        violation_id = None
+        if violation_id_raw:
+            try:
+                requested_violation_id = int(violation_id_raw)
+            except (TypeError, ValueError):
+                requested_violation_id = None
+
+            if requested_violation_id is not None:
+                cursor.execute("""
+                    SELECT id
+                    FROM violations
+                    WHERE id = %s
+                      AND session_id = %s
+                    LIMIT 1
+                """, (requested_violation_id, session_id))
+                violation_row = cursor.fetchone()
+                violation_id = violation_row[0] if violation_row else None
+
+        if violation_id is None:
+            cursor.execute("""
+                SELECT id
+                FROM violations
+                WHERE session_id = %s
+                  AND violation_type = %s
+                ORDER BY id DESC
+                LIMIT 1
+            """, (session_id, violation_type))
+            violation_row = cursor.fetchone()
+            violation_id = violation_row[0] if violation_row else None
+
+        cursor.execute("""
+            INSERT INTO evidence
+            (
+                violation_id,
+                session_id,
+                file_path
+            )
+            VALUES (%s, %s, %s)
+        """, (
+            violation_id,
+            session_id,
+            file_path
+        ))
+
+        evidence_id = cursor.lastrowid
+        connection.commit()
+
+        return jsonify({
+            "success": True,
+            "evidence_id": int(evidence_id),
+            "violation_id": int(violation_id) if violation_id is not None else None,
+            "file_path": file_path
+        })
+
+    except Exception as error:
+        if connection is not None:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+        print("Central evidence error:", error)
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 500
+
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+@app.route("/api/monitor/violations", methods=["GET"])
+def monitor_violations():
+    connection = None
+    cursor = None
+    try:
+        session_id = str(request.args.get("session_id", "")).strip()
+        if not session_id:
+            return jsonify({"success": False, "error": "session_id is required."}), 400
+
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({"success": False, "error": "Unable to connect to MySQL."}), 500
+
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT id, violation_type, severity, penalty, description, timestamp
+            FROM violations
+            WHERE session_id = %s
+            ORDER BY timestamp DESC
+        """, (session_id,))
+        rows = cursor.fetchall()
+
+        for row in rows:
+            for key, value in list(row.items()):
+                row[key] = _monitor_json_datetime(value)
+
+        return jsonify({"success": True, "violations": rows})
+
+    except Exception as error:
+        print("Central violation read error:", error)
+        return jsonify({"success": False, "error": str(error), "violations": []}), 500
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+@app.route("/api/monitor/evidence", methods=["GET"])
+def monitor_evidence_list():
+    connection = None
+    cursor = None
+    try:
+        session_id = str(request.args.get("session_id", "")).strip()
+        if not session_id:
+            return jsonify({"success": False, "error": "session_id is required."}), 400
+
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({"success": False, "error": "Unable to connect to MySQL."}), 500
+
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT id, violation_id, session_id, file_path, timestamp
+            FROM evidence
+            WHERE session_id = %s
+            ORDER BY timestamp DESC
+        """, (session_id,))
+        rows = cursor.fetchall()
+
+        for row in rows:
+            for key, value in list(row.items()):
+                row[key] = _monitor_json_datetime(value)
+
+        return jsonify({"success": True, "evidence": rows})
+
+    except Exception as error:
+        print("Central evidence read error:", error)
+        return jsonify({"success": False, "error": str(error), "evidence": []}), 500
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+@app.route("/api/monitor/session-complete", methods=["POST"])
+def monitor_session_complete():
+    connection = None
+    cursor = None
+    try:
+        data = request.get_json(silent=True) or {}
+
+        session_id = str(data.get("session_id", "")).strip()
+        student_id = str(data.get("student_id", "")).strip()
+        exam_name = str(data.get("exam_name", "PROCTIFY EXAM")).strip()
+        start_time = data.get("start_time")
+        end_time = data.get("end_time")
+        trust_score = int(data.get("final_trust_score", 100) or 100)
+        risk_level = str(data.get("final_risk_level", "LOW"))
+
+        if not session_id or not student_id:
+            return jsonify({
+                "success": False,
+                "error": "session_id and student_id are required."
+            }), 400
+
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({"success": False, "error": "Unable to connect to MySQL."}), 500
+
+        cursor = connection.cursor()
+        cursor.execute("""
+            INSERT INTO exam_sessions
+            (
+                session_id,
+                student_id,
+                exam_name,
+                start_time,
+                end_time,
+                status,
+                final_trust_score,
+                final_risk_level
+            )
+            VALUES (%s, %s, %s, %s, %s, 'COMPLETED', %s, %s)
+            ON DUPLICATE KEY UPDATE
+                student_id = VALUES(student_id),
+                exam_name = VALUES(exam_name),
+                start_time = VALUES(start_time),
+                end_time = VALUES(end_time),
+                status = 'COMPLETED',
+                final_trust_score = VALUES(final_trust_score),
+                final_risk_level = VALUES(final_risk_level)
+        """, (
+            session_id,
+            student_id,
+            exam_name,
+            start_time,
+            end_time,
+            trust_score,
+            risk_level
+        ))
+
+        cursor.execute("""
+            UPDATE live_students
+            SET status = 'OFFLINE',
+                phone = 0,
+                phone_count = 0,
+                person_count = 0,
+                face_count = 0,
+                hand_count = 0,
+                gaze = 'NO FACE',
+                head_direction = 'NO FACE',
+                audio = 'STOPPED',
+                audio_volume = 0,
+                camera_available = 0,
+                audio_available = 0,
+                ai_available = 0,
+                tab_available = 0
+            WHERE student_id = %s
+              AND session_id = %s
+        """, (student_id, session_id))
+
+        connection.commit()
+
+        return jsonify({
+            "success": True,
+            "session_id": session_id
+        })
+
+    except Exception as error:
+        if connection is not None:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+        print("Central session-complete error:", error)
+        return jsonify({"success": False, "error": str(error)}), 500
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+@app.route("/api/monitor/report", methods=["POST"])
+def monitor_report():
+    try:
+        data = request.get_json(silent=True) or {}
+        session_id = str(data.get("session_id", "")).strip()
+        student_id = str(data.get("student_id", "")).strip()
+        exam_name = str(data.get("exam_name", "PROCTIFY EXAM")).strip()
+
+        if not session_id or not student_id:
+            return jsonify({
+                "success": False,
+                "error": "session_id and student_id are required."
+            }), 400
+
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({"success": False, "error": "Unable to connect to MySQL."}), 500
+
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT final_trust_score, final_risk_level
+            FROM exam_sessions
+            WHERE session_id = %s
+            LIMIT 1
+        """, (session_id,))
+        session_row = cursor.fetchone() or {}
+
+        cursor.execute("""
+            SELECT id, violation_type, severity, penalty, description, timestamp
+            FROM violations
+            WHERE session_id = %s
+            ORDER BY timestamp ASC
+        """, (session_id,))
+        violations = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT id, violation_id, file_path, timestamp
+            FROM evidence
+            WHERE session_id = %s
+            ORDER BY timestamp ASC
+        """, (session_id,))
+        evidence = cursor.fetchall()
+
+        for collection in (violations, evidence):
+            for row in collection:
+                for key, value in list(row.items()):
+                    row[key] = _monitor_json_datetime(value)
+
+        report_dir = os.path.join(BASE_DIR, "reports")
+        os.makedirs(report_dir, exist_ok=True)
+        report_path = os.path.join(
+            report_dir,
+            f"session_report_{session_id.replace(' ', '_')}.json"
+        )
+
+        report_data = {
+            "system": "PROCTIFY",
+            "session_id": session_id,
+            "student_id": student_id,
+            "exam_name": exam_name,
+            "start_time": data.get("start_time"),
+            "end_time": data.get("end_time"),
+            "duration_seconds": data.get("duration_seconds", 0),
+            "cheating_score": data.get("cheating_score", 0),
+            "final_trust_score": session_row.get(
+                "final_trust_score",
+                data.get("final_trust_score", 100)
+            ),
+            "final_risk_level": session_row.get(
+                "final_risk_level",
+                data.get("final_risk_level", "LOW")
+            ),
+            "total_violations": len(violations),
+            "total_evidence": len(evidence),
+            "violations": violations,
+            "evidence": evidence
+        }
+
+        with open(report_path, "w", encoding="utf-8") as file:
+            json.dump(report_data, file, indent=4)
+
+        cursor.close()
+        connection.close()
+        cursor = None
+        connection = None
+
+        return jsonify({
+            "success": True,
+            "report_path": report_path
+        })
+
+    except Exception as error:
+        print("Central report generation error:", error)
+        return jsonify({"success": False, "error": str(error)}), 500
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+@app.route("/api/live/video/frame", methods=["POST"])
+def receive_live_video_frame():
+    try:
+        student_id = str(request.form.get("student_id", "")).strip()
+        session_id = str(request.form.get("session_id", "")).strip()
+        uploaded = request.files.get("frame")
+
+        if uploaded is None:
+            # Also accept raw request bodies for compatibility with future agents.
+            raw = request.get_data()
+        else:
+            raw = uploaded.read()
+
+        if not student_id or not session_id or not raw:
+            return jsonify({
+                "success": False,
+                "error": "student_id, session_id and frame are required."
+            }), 400
+
+        now_mono = time.monotonic()
+
+        with LIVE_VIDEO_LOCK:
+            LIVE_VIDEO_FRAMES[student_id] = {
+                "session_id": session_id,
+                "frame": raw,
+                "updated": now_mono
+            }
+
+        # Video frames are also a live heartbeat from the student agent.
+        with CENTRAL_LIVE_LOCK:
+            heartbeat = CENTRAL_LIVE_HEARTBEATS.get(student_id)
+            if heartbeat is not None and heartbeat.get("session_id") == session_id:
+                heartbeat["updated"] = now_mono
+
+        return jsonify({"success": True})
+
+    except Exception as error:
+        print("Live video receive error:", error)
+        return jsonify({"success": False, "error": str(error)}), 500
+
+
+@app.route("/api/live/video/<student_id>")
+def live_video_stream(student_id):
+    student_id = str(student_id).strip()
+
+    def generate():
+        last_sent = None
+
+        while True:
+            with LIVE_VIDEO_LOCK:
+                item = LIVE_VIDEO_FRAMES.get(student_id)
+                if item is not None:
+                    age = time.monotonic() - item["updated"]
+                    frame = item["frame"] if age <= LIVE_VIDEO_MAX_AGE else None
+                else:
+                    frame = None
+
+            if frame is not None and frame != last_sent:
+                last_sent = frame
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n"
+                    b"Cache-Control: no-cache\r\n\r\n"
+                    + frame
+                    + b"\r\n"
+                )
+
+            time.sleep(0.05)
+
+    return Response(
+        generate(),
+        mimetype="multipart/x-mixed-replace; boundary=frame",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
+
+
+# ============================================================
 # SQL-ONLY REPORT COMPATIBILITY ENDPOINTS
 # ============================================================
 # These endpoints exist so older/cached dashboard JavaScript that
@@ -5116,81 +5895,62 @@ def submit_exam(exam_id):
     "/monitor/<student_id>"
 )
 def monitor_student(student_id):
+    connection = None
+    cursor = None
 
-    students = get_students()
+    try:
+        connection = get_database_connection()
+        if connection is None:
+            return "Unable to connect to MySQL", 500
 
+        cursor = connection.cursor(dictionary=True)
 
-    selected_student = None
+        cursor.execute("""
+            SELECT
+                ls.*,
+                (
+                    SELECT REPLACE(v.violation_type, '_', ' ')
+                    FROM violations v
+                    WHERE v.session_id = ls.session_id
+                    ORDER BY v.timestamp DESC
+                    LIMIT 1
+                ) AS last_event
+            FROM live_students ls
+            WHERE ls.student_id = %s
+              AND UPPER(ls.status) = 'ONLINE'
+              AND ls.last_update >= (NOW() - INTERVAL 5 SECOND)
+            LIMIT 1
+        """, (str(student_id),))
 
+        selected_student = cursor.fetchone()
 
-    for student in students:
+        if selected_student is None:
+            return "Student is not currently live.", 404
 
-        student = normalize_student(
-            student
+        selected_student = normalize_student(selected_student)
+        session_id = selected_student.get("session_id", "")
+
+        violations = get_student_violations(session_id)
+        evidence = get_student_evidence(session_id)
+        trust_history = get_trust_score_history(session_id)
+
+        return render_template(
+            "monitor.html",
+            student=selected_student,
+            violations=violations,
+            evidence=evidence,
+            trust_history=trust_history
         )
 
+    except Exception as error:
+        print("Monitor student error:", error)
+        return "Unable to load student monitor.", 500
 
-        if str(
-            student.get(
-                "student_id"
-            )
-        ) == str(
-            student_id
-        ):
-
-            selected_student = student
-
-            break
-
-
-    if selected_student is None:
-
-        return (
-            "Student not found",
-            404
-        )
-
-
-    session_id = selected_student.get(
-        "session_id",
-        ""
-    )
-
-
-    violations = (
-        get_student_violations(
-            session_id
-        )
-    )
-
-
-    evidence = (
-        get_student_evidence(
-            session_id
-        )
-    )
-
-
-    trust_history = (
-        get_trust_score_history(
-            session_id
-        )
-    )
-
-
-    return render_template(
-
-        "monitor.html",
-
-        student=selected_student,
-
-        violations=violations,
-
-        evidence=evidence,
-
-        trust_history=trust_history
-
-    )
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
 
 
 # ============================================================

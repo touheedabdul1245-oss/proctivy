@@ -3,6 +3,7 @@ import uuid
 import os
 import json
 import mysql.connector
+import requests
 
 from datetime import datetime
 
@@ -70,6 +71,25 @@ DB_CONFIG = {
 
 
 # ============================================================
+# CENTRAL PROCTIFY SERVER
+# ============================================================
+# In the final architecture the Student PC never connects directly
+# to MySQL. The monitoring engine sends monitoring data to the central
+# PROCTIFY server, and the server writes to MySQL.
+PROCTIFY_SERVER_URL = os.getenv(
+    "PROCTIFY_SERVER_URL",
+    ""
+).strip().rstrip("/")
+
+PROCTIFY_API_TIMEOUT = float(os.getenv(
+    "PROCTIFY_API_TIMEOUT",
+    "5"
+))
+
+CLOUD_MODE = bool(PROCTIFY_SERVER_URL)
+
+
+# ============================================================
 # VIOLATION PENALTIES
 # ============================================================
 
@@ -104,43 +124,26 @@ PENALTIES = {
 
 def get_database_connection():
 
+    # --------------------------------------------------------
+    # CLOUD MODE
+    # --------------------------------------------------------
+    # Never open a MySQL connection from the Student PC when a
+    # central server URL is configured.
+    if CLOUD_MODE:
+        return None
+
     try:
-
-        connection = mysql.connector.connect(
-
-            **DB_CONFIG
-
-        )
-
+        connection = mysql.connector.connect(**DB_CONFIG)
         return connection
 
-
     except mysql.connector.Error as error:
-
         print()
-
-        print(
-            "========================================"
-        )
-
-        print(
-            "MYSQL CONNECTION ERROR"
-        )
-
-        print(
-            "========================================"
-        )
-
-        print(
-            error
-        )
-
-        print(
-            "========================================"
-        )
-
+        print("========================================")
+        print("MYSQL CONNECTION ERROR")
+        print("========================================")
+        print(error)
+        print("========================================")
         print()
-
         return None
 
 
@@ -184,6 +187,11 @@ class MonitoringEngine:
 
         self.violation_count = 0
 
+        # Exact violation associated with the next evidence image.
+        # This prevents evidence from being linked to another student's
+        # or another concurrent violation when multiple students are live.
+        self.last_violation_id = None
+
 
         print()
 
@@ -223,287 +231,126 @@ class MonitoringEngine:
     # ========================================================
 
     def record_violation(
-
         self,
-
         violation_type,
-
         severity="MEDIUM",
-
         description=""
-
     ):
 
-
-        # ----------------------------------------------------
-        # PENALTY
-        # ----------------------------------------------------
-
-        penalty = PENALTIES.get(
-
-            violation_type,
-
-            0
-
-        )
-
-
-        # ----------------------------------------------------
-        # OLD SCORE
-        # ----------------------------------------------------
+        penalty = PENALTIES.get(violation_type, 0)
 
         old_score = self.trust_score
 
-
-        # ----------------------------------------------------
-        # APPLY PENALTY
-        # ----------------------------------------------------
-
         self.cheating_score += penalty
-
-
-        self.trust_score = max(
-
-            0,
-
-            100 - self.cheating_score
-
-        )
-
-
+        self.trust_score = max(0, 100 - self.cheating_score)
         self.violation_count += 1
 
+        payload = {
+            "session_id": self.session_id,
+            "student_id": self.student_id,
+            "exam_name": self.exam_name,
+            "violation_type": str(violation_type),
+            "severity": str(severity),
+            "penalty": int(penalty),
+            "description": str(description),
+            "old_score": int(old_score),
+            "new_score": int(self.trust_score)
+        }
+
+        if CLOUD_MODE:
+            try:
+                response = requests.post(
+                    f"{PROCTIFY_SERVER_URL}/api/monitor/violation",
+                    json=payload,
+                    timeout=PROCTIFY_API_TIMEOUT
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                violation_id = data.get("violation_id")
+                self.last_violation_id = violation_id
+
+                print()
+                print("========================================")
+                print("PROCTIFY VIOLATION")
+                print("========================================")
+                print(f"Type       : {violation_type}")
+                print(f"Severity   : {severity}")
+                print(f"Penalty    : -{penalty}")
+                print(f"Trust Score: {self.trust_score}")
+                print(f"Stored via central server: YES")
+                print("========================================")
+                print()
+
+                return violation_id
+
+            except Exception as error:
+                print()
+                print("CENTRAL SERVER VIOLATION ERROR:")
+                print(error)
+                print()
+                # Keep the in-memory score so monitoring can continue.
+                return None
 
         connection = get_database_connection()
 
-
         if connection is None:
-
-            print(
-                "Violation could not be stored in MySQL."
-            )
-
+            print("Violation could not be stored in MySQL.")
             return None
-
 
         cursor = None
 
-
         try:
-
             cursor = connection.cursor()
 
-
-            # ------------------------------------------------
-            # INSERT VIOLATION
-            # ------------------------------------------------
-
-            query = """
-
+            cursor.execute("""
                 INSERT INTO violations
-
                 (
-
                     session_id,
-
                     violation_type,
-
                     severity,
-
                     penalty,
-
                     description
-
                 )
-
-                VALUES
-
-                (
-
-                    %s,
-
-                    %s,
-
-                    %s,
-
-                    %s,
-
-                    %s
-
-                )
-
-            """
-
-
-            values = (
-
+                VALUES (%s, %s, %s, %s, %s)
+            """, (
                 self.session_id,
-
                 violation_type,
-
                 severity,
-
                 penalty,
-
                 description
-
-            )
-
-
-            cursor.execute(
-
-                query,
-
-                values
-
-            )
-
+            ))
 
             violation_id = cursor.lastrowid
+            self.last_violation_id = violation_id
 
-
-            # ------------------------------------------------
-            # TRUST SCORE HISTORY
-            # ------------------------------------------------
-
-            score_query = """
-
+            cursor.execute("""
                 INSERT INTO trust_score_history
-
                 (
-
                     session_id,
-
                     old_score,
-
                     new_score,
-
                     reason
-
                 )
-
-                VALUES
-
-                (
-
-                    %s,
-
-                    %s,
-
-                    %s,
-
-                    %s
-
-                )
-
-            """
-
-
-            score_values = (
-
+                VALUES (%s, %s, %s, %s)
+            """, (
                 self.session_id,
-
                 old_score,
-
                 self.trust_score,
-
                 violation_type
-
-            )
-
-
-            cursor.execute(
-
-                score_query,
-
-                score_values
-
-            )
-
+            ))
 
             connection.commit()
-
-
-            # ------------------------------------------------
-            # CONSOLE OUTPUT
-            # ------------------------------------------------
-
-            print()
-
-            print(
-                "========================================"
-            )
-
-            print(
-                "PROCTIFY VIOLATION"
-            )
-
-            print(
-                "========================================"
-            )
-
-            print(
-                f"Type       : {violation_type}"
-            )
-
-            print(
-                f"Severity   : {severity}"
-            )
-
-            print(
-                f"Penalty    : -{penalty}"
-            )
-
-            print(
-                f"Trust Score: {self.trust_score}"
-            )
-
-            print(
-                f"Time       : {datetime.now()}"
-            )
-
-            print(
-                "Stored in MySQL: YES"
-            )
-
-            print(
-                "========================================"
-            )
-
-            print()
-
-
             return violation_id
 
-
         except mysql.connector.Error as error:
-
-            print()
-
-            print(
-                "MYSQL VIOLATION ERROR:"
-            )
-
-            print(
-                error
-            )
-
-            print()
-
-
+            print("MYSQL VIOLATION ERROR:", error)
             connection.rollback()
-
-
             return None
 
-
         finally:
-
             if cursor is not None:
-
                 cursor.close()
-
-
             connection.close()
 
 
@@ -512,258 +359,127 @@ class MonitoringEngine:
     # ========================================================
 
     def save_evidence(
-
         self,
-
         frame,
-
         violation_type
-
     ):
 
+        if CLOUD_MODE:
+            try:
+                success, encoded = cv2.imencode(".jpg", frame)
 
-        # ----------------------------------------------------
-        # ENSURE EVIDENCE DIRECTORY EXISTS
-        # ----------------------------------------------------
+                if not success:
+                    print("ERROR: Could not encode evidence image.")
+                    return None
 
-        os.makedirs(
+                files = {
+                    "evidence": (
+                        f"{violation_type}.jpg",
+                        encoded.tobytes(),
+                        "image/jpeg"
+                    )
+                }
 
-            EVIDENCE_DIR,
+                data = {
+                    "session_id": self.session_id,
+                    "student_id": self.student_id,
+                    "exam_name": self.exam_name,
+                    "violation_type": str(violation_type),
+                    "violation_id": (
+                        str(self.last_violation_id)
+                        if self.last_violation_id is not None
+                        else ""
+                    )
+                }
 
-            exist_ok=True
+                response = requests.post(
+                    f"{PROCTIFY_SERVER_URL}/api/monitor/evidence",
+                    data=data,
+                    files=files,
+                    timeout=PROCTIFY_API_TIMEOUT
+                )
+                response.raise_for_status()
 
-        )
+                result = response.json()
+                file_path = result.get("file_path")
 
+                print("Evidence uploaded through central server.")
+                return file_path
 
-        # ----------------------------------------------------
-        # CREATE FILENAME
-        # ----------------------------------------------------
+            except Exception as error:
+                print("CENTRAL SERVER EVIDENCE ERROR:", error)
+                return None
 
-        timestamp = datetime.now().strftime(
+        os.makedirs(EVIDENCE_DIR, exist_ok=True)
 
-            "%Y%m%d_%H%M%S"
-
-        )
-
-
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         unique_id = uuid.uuid4().hex[:8]
 
-
         filename = (
-
-            f"{violation_type}_"
-
-            f"{timestamp}_"
-
-            f"{unique_id}.jpg"
-
+            f"{violation_type}_{timestamp}_{unique_id}.jpg"
         )
 
+        file_path = os.path.join(EVIDENCE_DIR, filename)
 
-        file_path = os.path.join(
-
-            EVIDENCE_DIR,
-
-            filename
-
-        )
-
-
-        # ----------------------------------------------------
-        # SAVE IMAGE
-        # ----------------------------------------------------
-
-        success = cv2.imwrite(
-
-            file_path,
-
-            frame
-
-        )
-
+        success = cv2.imwrite(file_path, frame)
 
         if not success:
-
-            print(
-
-                "ERROR: Could not save evidence image."
-
-            )
-
+            print("ERROR: Could not save evidence image.")
             return None
-
-
-        # ----------------------------------------------------
-        # CONNECT MYSQL
-        # ----------------------------------------------------
 
         connection = get_database_connection()
 
-
         if connection is None:
-
             return file_path
-
 
         cursor = None
 
-
         try:
-
             cursor = connection.cursor()
 
+            violation_id = self.last_violation_id
 
-            # ------------------------------------------------
-            # FIND LATEST VIOLATION
-            # ------------------------------------------------
+            # Compatibility fallback for legacy/local mode if evidence is
+            # saved before record_violation returned an ID.
+            if violation_id is None:
+                cursor.execute("""
+                    SELECT id
+                    FROM violations
+                    WHERE session_id = %s
+                    ORDER BY id DESC
+                    LIMIT 1
+                """, (self.session_id,))
 
-            query = """
+                result = cursor.fetchone()
+                violation_id = result[0] if result else None
 
-                SELECT id
-
-                FROM violations
-
-                WHERE session_id = %s
-
-                ORDER BY id DESC
-
-                LIMIT 1
-
-            """
-
-
-            cursor.execute(
-
-                query,
-
-                (
-
-                    self.session_id,
-
-                )
-
-            )
-
-
-            result = cursor.fetchone()
-
-
-            if result:
-
-                violation_id = result[0]
-
-            else:
-
-                violation_id = None
-
-
-            # ------------------------------------------------
-            # INSERT EVIDENCE
-            # ------------------------------------------------
-
-            evidence_query = """
-
+            cursor.execute("""
                 INSERT INTO evidence
-
                 (
-
                     violation_id,
-
                     session_id,
-
                     file_path
-
                 )
-
-                VALUES
-
-                (
-
-                    %s,
-
-                    %s,
-
-                    %s
-
-                )
-
-            """
-
-
-            evidence_values = (
-
+                VALUES (%s, %s, %s)
+            """, (
                 violation_id,
-
                 self.session_id,
-
                 file_path
-
-            )
-
-
-            cursor.execute(
-
-                evidence_query,
-
-                evidence_values
-
-            )
-
+            ))
 
             connection.commit()
-
-
-            print()
-
-            print(
-
-                "Evidence saved:"
-
-            )
-
-            print(
-
-                file_path
-
-            )
-
-            print(
-
-                "Evidence stored in MySQL."
-
-            )
-
-            print()
-
-
             return file_path
-
 
         except mysql.connector.Error as error:
-
-            print(
-
-                "MYSQL EVIDENCE ERROR:",
-
-                error
-
-            )
-
-
+            print("MYSQL EVIDENCE ERROR:", error)
             connection.rollback()
-
-
             return file_path
 
-
         finally:
-
             if cursor is not None:
-
                 cursor.close()
-
-
             connection.close()
+
 
      # ========================================================
     # UPDATE LIVE STUDENT IN MYSQL
@@ -774,9 +490,7 @@ class MonitoringEngine:
     # ========================================================
 
     def update_live_student(
-
         self,
-
         student_id,
         exam_name,
         status,
@@ -789,288 +503,160 @@ class MonitoringEngine:
         head_direction,
         audio,
         audio_volume,
-
         camera_available=False,
         audio_available=False,
         ai_available=False,
         tab_available=True,
-
         trust_score=None,
         risk_level=None
-
     ):
 
-
-        # ----------------------------------------------------
-        # USE CURRENT ENGINE VALUES IF NOT PROVIDED
-        # ----------------------------------------------------
-
         if trust_score is None:
-
             trust_score = self.trust_score
 
-
         if risk_level is None:
-
             risk_level = self.get_risk_level()
 
+        payload = {
+            "student_id": str(student_id),
+            "session_id": str(self.session_id),
+            "exam_name": str(exam_name),
+            "status": str(status),
+            "trust_score": int(trust_score),
+            "risk_level": str(risk_level),
+            "phone": bool(phone),
+            "phone_count": int(phone_count),
+            "person_count": int(person_count),
+            "face_count": int(face_count),
+            "hand_count": int(hand_count),
+            "gaze": str(gaze),
+            "head_direction": str(head_direction),
+            "audio": str(audio),
+            "audio_volume": float(audio_volume),
+            "camera_available": bool(camera_available),
+            "audio_available": bool(audio_available),
+            "ai_available": bool(ai_available),
+            "tab_available": bool(tab_available)
+        }
 
-        # ----------------------------------------------------
-        # CONNECT TO MYSQL
-        # ----------------------------------------------------
+        if CLOUD_MODE:
+            try:
+                response = requests.post(
+                    f"{PROCTIFY_SERVER_URL}/api/monitor/live-status",
+                    json=payload,
+                    timeout=PROCTIFY_API_TIMEOUT
+                )
+                response.raise_for_status()
+                return bool(response.json().get("success", True))
+
+            except Exception as error:
+                print("CENTRAL SERVER LIVE STATUS ERROR:", error)
+                return False
 
         connection = get_database_connection()
 
-
         if connection is None:
-
             print(
                 "Live student update failed: "
                 "MySQL connection unavailable."
             )
-
             return False
-
 
         cursor = None
 
-
         try:
-
             cursor = connection.cursor()
 
-
-            # ------------------------------------------------
-            # INSERT OR UPDATE LIVE STUDENT
-            # ------------------------------------------------
-
             query = """
-
                 INSERT INTO live_students
-
                 (
-
                     student_id,
                     session_id,
                     exam_name,
                     status,
-
                     trust_score,
                     risk_level,
-
                     phone,
                     phone_count,
                     person_count,
                     face_count,
                     hand_count,
-
                     gaze,
                     head_direction,
-
                     audio,
                     audio_volume,
-
                     camera_available,
                     audio_available,
                     ai_available,
                     tab_available
-
                 )
-
                 VALUES
-
                 (
-
-                    %s,
-                    %s,
-                    %s,
-                    %s,
-
-                    %s,
-                    %s,
-
-                    %s,
-                    %s,
-                    %s,
-                    %s,
-                    %s,
-
-                    %s,
-                    %s,
-
-                    %s,
-                    %s,
-
-                    %s,
-                    %s,
-                    %s,
-                    %s
-
+                    %s, %s, %s, %s,
+                    %s, %s,
+                    %s, %s, %s, %s, %s,
+                    %s, %s,
+                    %s, %s,
+                    %s, %s, %s, %s
                 )
-
                 ON DUPLICATE KEY UPDATE
-
-                    session_id =
-                        VALUES(session_id),
-
-                    exam_name =
-                        VALUES(exam_name),
-
-                    status =
-                        VALUES(status),
-
-                    trust_score =
-                        VALUES(trust_score),
-
-                    risk_level =
-                        VALUES(risk_level),
-
-                    phone =
-                        VALUES(phone),
-
-                    phone_count =
-                        VALUES(phone_count),
-
-                    person_count =
-                        VALUES(person_count),
-
-                    face_count =
-                        VALUES(face_count),
-
-                    hand_count =
-                        VALUES(hand_count),
-
-                    gaze =
-                        VALUES(gaze),
-
-                    head_direction =
-                        VALUES(head_direction),
-
-                    audio =
-                        VALUES(audio),
-
-                    audio_volume =
-                        VALUES(audio_volume),
-
-                    camera_available =
-                        VALUES(camera_available),
-
-                    audio_available =
-                        VALUES(audio_available),
-
-                    ai_available =
-                        VALUES(ai_available),
-
-                    tab_available =
-                        VALUES(tab_available)
-
+                    session_id = VALUES(session_id),
+                    exam_name = VALUES(exam_name),
+                    status = VALUES(status),
+                    trust_score = VALUES(trust_score),
+                    risk_level = VALUES(risk_level),
+                    phone = VALUES(phone),
+                    phone_count = VALUES(phone_count),
+                    person_count = VALUES(person_count),
+                    face_count = VALUES(face_count),
+                    hand_count = VALUES(hand_count),
+                    gaze = VALUES(gaze),
+                    head_direction = VALUES(head_direction),
+                    audio = VALUES(audio),
+                    audio_volume = VALUES(audio_volume),
+                    camera_available = VALUES(camera_available),
+                    audio_available = VALUES(audio_available),
+                    ai_available = VALUES(ai_available),
+                    tab_available = VALUES(tab_available)
             """
 
-
             values = (
-
                 str(student_id),
-
                 str(self.session_id),
-
                 str(exam_name),
-
                 str(status),
-
-
                 int(trust_score),
-
                 str(risk_level),
-
-
                 int(bool(phone)),
-
                 int(phone_count),
-
                 int(person_count),
-
                 int(face_count),
-
                 int(hand_count),
-
-
                 str(gaze),
-
                 str(head_direction),
-
-
                 str(audio),
-
                 float(audio_volume),
-
-
                 int(bool(camera_available)),
-
                 int(bool(audio_available)),
-
                 int(bool(ai_available)),
-
                 int(bool(tab_available))
-
             )
 
-
-            cursor.execute(
-
-                query,
-
-                values
-
-            )
-
-
+            cursor.execute(query, values)
             connection.commit()
-
-
             return True
 
-
         except mysql.connector.Error as error:
-
-            print()
-
-            print(
-                "========================================"
-            )
-
-            print(
-                "MYSQL LIVE STUDENT UPDATE ERROR"
-            )
-
-            print(
-                "========================================"
-            )
-
-            print(
-                error
-            )
-
-            print(
-                "========================================"
-            )
-
-            print()
-
-
+            print("MYSQL LIVE STUDENT UPDATE ERROR:", error)
             connection.rollback()
-
-
             return False
 
-
         finally:
-
             if cursor is not None:
-
                 cursor.close()
-
-
             connection.close()
+
+
     # ========================================================
     # GET TRUST SCORE
     # ========================================================
@@ -1111,116 +697,64 @@ class MonitoringEngine:
 
     def get_session_violations(self):
 
+        if CLOUD_MODE:
+            try:
+                response = requests.get(
+                    f"{PROCTIFY_SERVER_URL}/api/monitor/violations",
+                    params={"session_id": self.session_id},
+                    timeout=PROCTIFY_API_TIMEOUT
+                )
+                response.raise_for_status()
+                return response.json().get("violations", [])
+
+            except Exception as error:
+                print("CENTRAL SERVER VIOLATION READ ERROR:", error)
+                return []
 
         connection = get_database_connection()
 
-
         if connection is None:
-
             return []
-
 
         cursor = None
 
-
         try:
-
             cursor = connection.cursor()
 
-
-            query = """
-
+            cursor.execute("""
                 SELECT
-
                     id,
-
                     violation_type,
-
                     severity,
-
                     penalty,
-
                     description,
-
                     timestamp
-
                 FROM violations
-
                 WHERE session_id = %s
-
                 ORDER BY id ASC
-
-            """
-
-
-            cursor.execute(
-
-                query,
-
-                (
-
-                    self.session_id,
-
-                )
-
-            )
-
+            """, (self.session_id,))
 
             rows = cursor.fetchall()
 
-
-            violations = []
-
-
-            for row in rows:
-
-                violations.append({
-
-                    "id":
-                        row[0],
-
-                    "type":
-                        row[1],
-
-                    "severity":
-                        row[2],
-
-                    "penalty":
-                        row[3],
-
-                    "description":
-                        row[4],
-
-                    "timestamp":
-                        str(row[5])
-
-                })
-
-
-            return violations
-
+            return [
+                {
+                    "id": row[0],
+                    "type": row[1],
+                    "severity": row[2],
+                    "penalty": row[3],
+                    "description": row[4],
+                    "timestamp": str(row[5])
+                }
+                for row in rows
+            ]
 
         except mysql.connector.Error as error:
-
-            print(
-
-                "MYSQL READ ERROR:",
-
-                error
-
-            )
-
-
+            print("MYSQL READ ERROR:", error)
             return []
 
-
         finally:
-
             if cursor is not None:
-
                 cursor.close()
-
-
             connection.close()
 
 
@@ -1230,106 +764,60 @@ class MonitoringEngine:
 
     def get_session_evidence(self):
 
+        if CLOUD_MODE:
+            try:
+                response = requests.get(
+                    f"{PROCTIFY_SERVER_URL}/api/monitor/evidence",
+                    params={"session_id": self.session_id},
+                    timeout=PROCTIFY_API_TIMEOUT
+                )
+                response.raise_for_status()
+                return response.json().get("evidence", [])
+
+            except Exception as error:
+                print("CENTRAL SERVER EVIDENCE READ ERROR:", error)
+                return []
 
         connection = get_database_connection()
 
-
         if connection is None:
-
             return []
-
 
         cursor = None
 
-
         try:
-
             cursor = connection.cursor()
 
-
-            query = """
-
+            cursor.execute("""
                 SELECT
-
                     id,
-
                     violation_id,
-
                     file_path,
-
                     timestamp
-
                 FROM evidence
-
                 WHERE session_id = %s
-
                 ORDER BY id ASC
-
-            """
-
-
-            cursor.execute(
-
-                query,
-
-                (
-
-                    self.session_id,
-
-                )
-
-            )
-
+            """, (self.session_id,))
 
             rows = cursor.fetchall()
 
-
-            evidence = []
-
-
-            for row in rows:
-
-                evidence.append({
-
-                    "id":
-                        row[0],
-
-                    "violation_id":
-                        row[1],
-
-                    "file_path":
-                        row[2],
-
-                    "timestamp":
-                        str(row[3])
-
-                })
-
-
-            return evidence
-
+            return [
+                {
+                    "id": row[0],
+                    "violation_id": row[1],
+                    "file_path": row[2],
+                    "timestamp": str(row[3])
+                }
+                for row in rows
+            ]
 
         except mysql.connector.Error as error:
-
-            print(
-
-                "MYSQL EVIDENCE READ ERROR:",
-
-                error
-
-            )
-
-
+            print("MYSQL EVIDENCE READ ERROR:", error)
             return []
 
-
         finally:
-
             if cursor is not None:
-
                 cursor.close()
-
-
             connection.close()
 
 
@@ -1342,27 +830,41 @@ class MonitoringEngine:
         end_time
     ):
 
+        payload = {
+            "session_id": self.session_id,
+            "student_id": self.student_id,
+            "exam_name": self.exam_name,
+            "start_time": self.start_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "end_time": end_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "final_trust_score": int(self.get_trust_score()),
+            "final_risk_level": str(self.get_risk_level())
+        }
+
+        if CLOUD_MODE:
+            try:
+                response = requests.post(
+                    f"{PROCTIFY_SERVER_URL}/api/monitor/session-complete",
+                    json=payload,
+                    timeout=PROCTIFY_API_TIMEOUT
+                )
+                response.raise_for_status()
+                return bool(response.json().get("success", True))
+
+            except Exception as error:
+                print("CENTRAL SERVER EXAM SESSION ERROR:", error)
+                return False
+
         connection = get_database_connection()
 
         if connection is None:
-
-            print(
-                "MYSQL EXAM SESSION ERROR: "
-                "Database connection unavailable."
-            )
-
             return False
-
 
         cursor = None
 
-
         try:
-
             cursor = connection.cursor()
 
-
-            query = """
+            cursor.execute("""
                 INSERT INTO exam_sessions
                 (
                     session_id,
@@ -1376,140 +878,42 @@ class MonitoringEngine:
                 )
                 VALUES
                 (
-                    %s,
-                    %s,
-                    %s,
-                    %s,
-                    %s,
+                    %s, %s, %s, %s, %s,
                     'COMPLETED',
-                    %s,
-                    %s
+                    %s, %s
                 )
                 ON DUPLICATE KEY UPDATE
-
                     student_id = VALUES(student_id),
-
                     exam_name = VALUES(exam_name),
-
                     start_time = VALUES(start_time),
-
                     end_time = VALUES(end_time),
-
                     status = 'COMPLETED',
-
-                    final_trust_score =
-                        VALUES(final_trust_score),
-
-                    final_risk_level =
-                        VALUES(final_risk_level)
-            """
-
-
-            cursor.execute(
-
-                query,
-
-                (
-
-                    self.session_id,
-
-                    self.student_id,
-
-                    self.exam_name,
-
-                    self.start_time,
-
-                    end_time,
-
-                    int(
-                        self.get_trust_score()
-                    ),
-
-                    str(
-                        self.get_risk_level()
-                    )
-
-                )
-
-            )
-
+                    final_trust_score = VALUES(final_trust_score),
+                    final_risk_level = VALUES(final_risk_level)
+            """, (
+                self.session_id,
+                self.student_id,
+                self.exam_name,
+                self.start_time,
+                end_time,
+                int(self.get_trust_score()),
+                str(self.get_risk_level())
+            ))
 
             connection.commit()
-
-
-            print()
-
-            print(
-                "========================================"
-            )
-
-            print(
-                "MYSQL EXAM SESSION SAVED"
-            )
-
-            print(
-                "========================================"
-            )
-
-            print(
-                f"Student ID: {self.student_id}"
-            )
-
-            print(
-                f"Exam: {self.exam_name}"
-            )
-
-            print(
-                f"Session ID: {self.session_id}"
-            )
-
-            print(
-                f"Trust Score: "
-                f"{self.get_trust_score()}"
-            )
-
-            print(
-                f"Risk Level: "
-                f"{self.get_risk_level()}"
-            )
-
-            print(
-                "========================================"
-            )
-
-            print()
-
-
             return True
 
-
         except Exception as error:
-
-            print(
-                "MYSQL EXAM SESSION SAVE ERROR:",
-                error
-            )
-
-
+            print("MYSQL EXAM SESSION SAVE ERROR:", error)
             try:
-
                 connection.rollback()
-
             except Exception:
-
                 pass
-
-
             return False
 
-
         finally:
-
             if cursor is not None:
-
                 cursor.close()
-
-
             connection.close()
 
 
@@ -1519,270 +923,107 @@ class MonitoringEngine:
 
     def generate_report(self):
 
-
         end_time = datetime.now()
 
+        if CLOUD_MODE:
+            try:
+                # Ensure the completed session is persisted in MySQL before
+                # the central report is generated.
+                self.save_completed_exam_session(end_time)
 
-        # ----------------------------------------------------
-        # MYSQL IS THE PRIMARY COMPLETED REPORT SOURCE
-        # ----------------------------------------------------
+                response = requests.post(
+                    f"{PROCTIFY_SERVER_URL}/api/monitor/report",
+                    json={
+                        "session_id": self.session_id,
+                        "student_id": self.student_id,
+                        "exam_name": self.exam_name,
+                        "start_time": self.start_time.strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        ),
+                        "end_time": end_time.strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        ),
+                        "duration_seconds": round(
+                            (end_time - self.start_time).total_seconds(),
+                            2
+                        ),
+                        "cheating_score": int(self.cheating_score),
+                        "final_trust_score": int(self.trust_score),
+                        "final_risk_level": self.get_risk_level()
+                    },
+                    timeout=PROCTIFY_API_TIMEOUT
+                )
+                response.raise_for_status()
 
-        self.save_completed_exam_session(
-            end_time
-        )
+                data = response.json()
 
+                print()
+                print("========================================")
+                print("PROCTIFY SESSION REPORT GENERATED")
+                print("========================================")
+                print(f"Central report: {data.get('report_path', '')}")
+                print(f"Trust Score: {self.trust_score}")
+                print(f"Risk Level: {self.get_risk_level()}")
+                print("========================================")
+                print()
 
-        # ----------------------------------------------------
-        # GET DATA FROM MYSQL
-        # ----------------------------------------------------
+                return data.get("report_path")
 
-        violations = (
+            except Exception as error:
+                print("CENTRAL SERVER REPORT ERROR:", error)
+                return None
 
-            self.get_session_violations()
+        self.save_completed_exam_session(end_time)
 
-        )
+        violations = self.get_session_violations()
+        evidence = self.get_session_evidence()
 
+        safe_session_id = str(self.session_id).replace(" ", "_")
 
-        evidence = (
-
-            self.get_session_evidence()
-
-        )
-
-
-        # ----------------------------------------------------
-        # REPORT FILENAME
-        # ----------------------------------------------------
-
-        safe_session_id = (
-
-            str(
-
-                self.session_id
-
-            ).replace(
-
-                " ",
-
-                "_"
-
-            )
-
-        )
-
-
-        report_filename = (
-
-            f"session_report_"
-
-            f"{safe_session_id}.json"
-
-        )
-
+        report_filename = f"session_report_{safe_session_id}.json"
 
         report_path = os.path.join(
-
             REPORTS_DIR,
-
             report_filename
-
         )
 
-
-        # ----------------------------------------------------
-        # REPORT DATA
-        # ----------------------------------------------------
-
         report_data = {
-
-
-            "system":
-
-                "PROCTIFY",
-
-
-            "session_id":
-
-                self.session_id,
-
-
-            "start_time":
-
-                self.start_time.strftime(
-
-                    "%Y-%m-%d %H:%M:%S"
-
-                ),
-
-
-            "end_time":
-
-                end_time.strftime(
-
-                    "%Y-%m-%d %H:%M:%S"
-
-                ),
-
-
-            "duration_seconds":
-
-                round(
-
-                    (
-
-                        end_time -
-
-                        self.start_time
-
-                    ).total_seconds(),
-
-                    2
-
-                ),
-
-
-            "total_violations":
-
-                len(
-
-                    violations
-
-                ),
-
-
-            "total_evidence":
-
-                len(
-
-                    evidence
-
-                ),
-
-
-            "cheating_score":
-
-                self.cheating_score,
-
-
-            "final_trust_score":
-
-                self.trust_score,
-
-
-            "final_risk_level":
-
-                self.get_risk_level(),
-
-
-            "violations":
-
-                violations,
-
-
-            "evidence":
-
-                evidence
-
+            "system": "PROCTIFY",
+            "session_id": self.session_id,
+            "start_time": self.start_time.strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
+            "end_time": end_time.strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
+            "duration_seconds": round(
+                (end_time - self.start_time).total_seconds(),
+                2
+            ),
+            "total_violations": len(violations),
+            "total_evidence": len(evidence),
+            "cheating_score": self.cheating_score,
+            "final_trust_score": self.trust_score,
+            "final_risk_level": self.get_risk_level(),
+            "violations": violations,
+            "evidence": evidence
         }
 
-
-        # ----------------------------------------------------
-        # WRITE REPORT
-        # ----------------------------------------------------
-
         try:
-
             with open(
-
                 report_path,
-
                 "w",
-
                 encoding="utf-8"
-
             ) as file:
-
-
                 json.dump(
-
                     report_data,
-
                     file,
-
                     indent=4
-
                 )
-
-
-            print()
-
-            print(
-
-                "========================================"
-
-            )
-
-            print(
-
-                "PROCTIFY SESSION REPORT GENERATED"
-
-            )
-
-            print(
-
-                "========================================"
-
-            )
-
-            print(
-
-                f"Report: {report_path}"
-
-            )
-
-            print(
-
-                f"Violations: {len(violations)}"
-
-            )
-
-            print(
-
-                f"Evidence: {len(evidence)}"
-
-            )
-
-            print(
-
-                f"Trust Score: {self.trust_score}"
-
-            )
-
-            print(
-
-                f"Risk Level: {self.get_risk_level()}"
-
-            )
-
-            print(
-
-                "========================================"
-
-            )
-
-            print()
-
 
             return report_path
 
-
         except Exception as error:
-
-            print(
-
-                "Report generation error:",
-
-                error
-
-            )
+            print("Report generation error:", error)
             return None
+
