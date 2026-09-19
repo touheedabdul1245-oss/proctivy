@@ -27,7 +27,7 @@
 .enrollment-modal{width:min(980px,100%);max-height:90vh;overflow-y:auto;position:relative;padding:34px;border-radius:30px;background:#fafaf8;color:#222;box-shadow:0 28px 80px rgba(0,0,0,.22)}
 .enrollment-close{position:absolute;top:20px;right:20px;width:45px;height:45px;border:0;border-radius:50%;background:#262626;color:#fff;font-size:26px;cursor:pointer}
 .enrollment-header{display:flex;justify-content:space-between;gap:20px;margin-bottom:28px;padding-right:55px}.enrollment-header h2{margin:8px 0}.enrollment-header p{color:#6d737b}.enrollment-count{padding:15px 20px;border-radius:18px;background:rgba(210,229,227,.75);text-align:center}.enrollment-count strong{display:block;font-size:28px}.enrollment-count span{font-size:10px;letter-spacing:.15em}
-.enrollment-layout{display:grid;grid-template-columns:1fr 1fr;gap:22px}.enrollment-form,.enrolled-list-panel{padding:22px;border-radius:22px;background:#fff;border:1px solid rgba(0,0,0,.08)}.enrollment-form{display:grid;gap:14px}.enrollment-form label{display:grid;gap:7px;font-size:12px;font-weight:600}.enrollment-form input{width:100%;box-sizing:border-box;padding:13px;border-radius:12px;border:1px solid rgba(0,0,0,.15);font:inherit}.enroll-submit{display:flex;justify-content:space-between;padding:14px 18px;border:0;border-radius:14px;background:#262626;color:#fff;cursor:pointer;font-weight:bold}.enrollment-message{min-height:20px;font-size:13px}.enrollment-message.success{color:green}.enrollment-message.error{color:red}.enrolled-list{display:grid;gap:10px;max-height:400px;overflow-y:auto}.enrolled-student-row{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:12px;padding:12px;border-radius:16px;background:#f0f2f2}.enrolled-student-avatar{width:42px;height:42px;display:grid;place-items:center;border-radius:14px;background:#d0e2e0;font-weight:bold}.enrolled-student-main strong,.enrolled-student-main span{display:block}.enrolled-student-main span,.enrolled-student-id{font-size:11px;color:#777d85}.enrollment-empty{padding:30px;text-align:center;color:#777d85}@media(max-width:760px){.enrollment-overlay{padding:12px}.enrollment-modal{padding:24px 18px}.enrollment-layout{grid-template-columns:1fr}}
+.enrollment-layout{display:grid;grid-template-columns:1fr 1fr;gap:22px}.enrollment-form,.enrolled-list-panel{padding:22px;border-radius:22px;background:#fff;border:1px solid rgba(0,0,0,.08)}.enrollment-form{display:grid;gap:14px}.enrollment-form label{display:grid;gap:7px;font-size:12px;font-weight:600}.enrollment-form input{width:100%;box-sizing:border-box;padding:13px;border-radius:12px;border:1px solid rgba(0,0,0,.15);font:inherit}.enroll-submit{display:flex;justify-content:space-between;padding:14px 18px;border:0;border-radius:14px;background:#262626;color:#fff;cursor:pointer;font-weight:bold}.enrollment-message{min-height:20px;font-size:13px}.enrollment-message.success{color:green}.enrollment-message.error{color:red}.enrolled-list{display:grid;gap:10px;max-height:400px;overflow-y:auto}.enrolled-student-row{display:grid;grid-template-columns:42px 1fr auto auto;align-items:center;gap:12px;padding:12px;border-radius:16px;background:#f0f2f2}.enrolled-delete{padding:8px 12px;font-size:10px}.enrolled-student-avatar{width:42px;height:42px;display:grid;place-items:center;border-radius:14px;background:#d0e2e0;font-weight:bold}.enrolled-student-main strong,.enrolled-student-main span{display:block}.enrolled-student-main span,.enrolled-student-id{font-size:11px;color:#777d85}.enrollment-empty{padding:30px;text-align:center;color:#777d85}.excel-upload-panel{display:grid;gap:12px;margin-bottom:22px;padding:20px;border-radius:20px;background:#eef2ee;border:1px dashed rgba(38,38,38,.28)}.excel-upload-info{display:grid;gap:4px}.excel-upload-info strong{font-size:14px}.excel-upload-info span{font-size:12px;color:#6d737b}.excel-upload-info code{background:#0a0a0a;color:#d7f6ef;padding:2px 6px;border-radius:6px;font-size:11px}.excel-upload-actions{display:flex;align-items:center;gap:14px}.excel-upload-actions .excel-btn{padding:10px 16px;font-size:13px}.excel-template-link{font-size:12px;color:#0b6e5a;text-decoration:underline;cursor:pointer}@media(max-width:760px){.enrollment-overlay{padding:12px}.enrollment-modal{padding:24px 18px}.enrollment-layout{grid-template-columns:1fr}}
 
 
 /* Live monitoring indicators: gray/idle when no student is active. */
@@ -40,6 +40,302 @@
     filter: grayscale(1);
     opacity: .28;
     box-shadow: none !important;
+}
+
+
+/* =========================================================
+   LIVE CLASSROOM LIST
+   Online students are rendered as LIST ROWS (not cards).
+========================================================= */
+.student-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.student-list .student-row {
+    display: grid;
+    grid-template-columns: auto minmax(140px, 1.4fr) minmax(150px, 1fr) auto minmax(200px, 1.4fr);
+    align-items: center;
+    gap: 16px;
+    padding: 13px 16px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, .82);
+    border: 1px solid rgba(80, 80, 80, .08);
+    box-shadow: 0 8px 22px rgba(70, 70, 60, .05);
+    transition: transform .15s ease, box-shadow .15s ease;
+    cursor: pointer;
+}
+
+.student-list .student-row:hover {
+    transform: translateX(2px);
+    box-shadow: 0 12px 26px rgba(70, 70, 60, .10);
+}
+
+.student-list .student-row.selected {
+    border-color: rgba(58, 95, 168, .45);
+    box-shadow: 0 0 0 2px rgba(58, 95, 168, .12);
+}
+
+.student-list .student-row .student-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.student-list .student-row .student-avatar {
+    width: 46px;
+    height: 46px;
+    display: grid;
+    place-items: center;
+    border-radius: 14px;
+    background: #e8eef4;
+    font-weight: 700;
+}
+
+.student-list .student-row .student-identity {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.student-list .student-row .student-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: #292927;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.student-list .student-row .student-id {
+    font-size: 11px;
+    color: #8a8a82;
+}
+
+.student-list .student-row .student-score {
+    display: grid;
+    gap: 6px;
+}
+
+.student-list .student-row .student-score-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 11px;
+    color: #8a8a82;
+}
+
+.student-list .student-row .student-score strong {
+    font-size: 17px;
+    color: #292927;
+}
+
+.student-list .student-row .score-bar {
+    height: 6px;
+    border-radius: 999px;
+    background: #ececE6;
+    overflow: hidden;
+}
+
+.student-list .student-row .score-bar span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: #5aa88c;
+}
+
+.student-list .student-row .student-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.student-list .student-row .student-footer span {
+    font-size: 12px;
+    color: #66665f;
+}
+
+.student-list .student-row .student-footer button {
+    width: 40px;
+    height: 40px;
+    border: 0;
+    border-radius: 12px;
+    background: #292927;
+    color: #fff;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+.student-list .student-row .student-health {
+    display: flex;
+    gap: 10px;
+    font-size: 9px;
+    letter-spacing: .08em;
+    color: #8a8a82;
+}
+
+.student-list .student-row .student-health-item {
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+}
+
+.student-list .student-row .student-health-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #d8d8d0;
+}
+
+.student-list .student-row .student-health-dot.online {
+    background: #4caf82;
+    box-shadow: 0 0 0 3px rgba(76, 175, 130, .16);
+}
+
+@media(max-width: 1100px) {
+    .student-list .student-row {
+        grid-template-columns: 1fr;
+        row-gap: 10px;
+    }
+    .student-list .student-row .student-top,
+    .student-list .student-row .student-score,
+    .student-list .student-row .student-footer,
+    .student-list .student-row .student-health {
+        grid-column: 1 / -1;
+    }
+}
+
+.status-tag.safe { color: #37745e; }
+.status-tag.warning { color: #a1741a; }
+.status-tag.danger { color: #b8342c; }
+
+
+/* =========================================================
+   EVALUATIONS / ALERTS / SETTINGS PANELS
+========================================================= */
+.submission-card {
+    border: 1px solid rgba(0,0,0,.08);
+    border-radius: 18px;
+    padding: 18px;
+    background: #fff;
+    margin-bottom: 12px;
+}
+
+.submission-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.submission-student { font-weight: 700; font-size: 18px; }
+.submission-exam { color: #777; font-size: 12px; margin-top: 4px; }
+
+.submission-badges { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+.eval-badge {
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    background: #f1f1ee;
+    color: #55554f;
+}
+
+.eval-badge.auto { background: #e2ede9; color: #2f6b55; }
+.eval-badge.manual { background: #fdeee0; color: #9a5a1c; }
+.eval-badge.pending { background: #fbe3e3; color: #a8322c; }
+.eval-badge.terminated { background: #f7dede; color: #a1221c; }
+
+.submission-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 10px;
+    margin: 16px 0;
+}
+
+.submission-metric { background: #f7f7f3; border-radius: 12px; padding: 11px; }
+.submission-metric span { display: block; font-size: 10px; color: #8a8a82; letter-spacing: .06em; }
+.submission-metric strong { font-size: 17px; }
+
+.submission-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+.teacher-btn {
+    border: 0;
+    border-radius: 12px;
+    padding: 11px 16px;
+    background: #292927;
+    color: #fff;
+    font-weight: 700;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.teacher-btn.secondary { background: #ecece7; color: #292927; }
+.teacher-btn.danger { background: #b8342c; }
+.teacher-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.teacher-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 11px 13px;
+    border-radius: 12px;
+    border: 1px solid rgba(0,0,0,.15);
+    font: inherit;
+}
+
+.eval-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.answer-row {
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: #f9f9f6;
+    margin-bottom: 8px;
+    font-size: 12px;
+}
+
+.answer-row.correct { background: #eef7f2; }
+.answer-row.wrong { background: #fdf1f0; }
+
+.answer-row .answer-q { font-weight: 600; margin-bottom: 6px; color: #292927; }
+.answer-row .answer-meta { color: #7c7c74; }
+.answer-row .answer-meta b { color: #292927; }
+
+.alert-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 14px;
+    border-radius: 14px;
+    background: #fdf3f2;
+    border: 1px solid rgba(184, 52, 44, .18);
+    margin-bottom: 10px;
+}
+
+.alert-row.info { background: #f2f6fb; border-color: rgba(58, 95, 168, .18); }
+
+.terminated-banner {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 20px;
+    border-radius: 18px;
+    background: #fdeceb;
+    border: 1px solid rgba(184, 52, 44, .28);
+    margin-bottom: 18px;
+}
+
+.terminated-banner.show { display: flex; }
+.terminated-banner strong { color: #a1221c; }
+
+@media(max-width: 760px) {
+    .eval-grid { grid-template-columns: 1fr; }
 }
 
 </style>
@@ -164,17 +460,11 @@
 
 
     <nav class="sidebar-nav">
+
         <button class="sidebar-item active"
-                title="Dashboard"
-                onclick="window.location.href='/'">
-
-            <i data-lucide="layout-grid"></i>
-
-        </button>
-
-
-        <button class="sidebar-item"
-                title="Live Monitoring">
+                title="Live Monitoring"
+                type="button"
+                onclick="openLiveMonitoring()">
 
             <i data-lucide="scan-face"></i>
 
@@ -183,6 +473,7 @@
 
         <button class="sidebar-item"
                 title="Exams"
+                type="button"
                 onclick="window.location.href='/exams'">
 
             <i data-lucide="file-text"></i>
@@ -201,8 +492,19 @@
 
 
         <button class="sidebar-item"
-                title="Reports"
+                title="Evaluations"
+                type="button"
                 onclick="openSubmissions()">
+
+            <i data-lucide="clipboard-check"></i>
+
+        </button>
+
+
+        <button class="sidebar-item"
+                title="Monitoring Reports"
+                type="button"
+                onclick="openReports('Monitoring Reports')">
 
             <i data-lucide="bar-chart-3"></i>
 
@@ -214,9 +516,21 @@
     <div class="sidebar-bottom">
 
         <button class="sidebar-item"
-                title="Settings">
+                title="Settings"
+                type="button"
+                onclick="openSettings()">
 
             <i data-lucide="settings"></i>
+
+        </button>
+
+
+        <button class="sidebar-item"
+                title="Sign out"
+                type="button"
+                onclick="teacherLogout()">
+
+            <i data-lucide="log-out"></i>
 
         </button>
 
@@ -245,7 +559,7 @@
         </div>
 
         <h1>
-            Good morning, Professor.
+            Good morning, {{ teacher_name }}.
         </h1>
 
         <p class="subtitle">
@@ -358,8 +672,8 @@
             <button
                 class="message-orb"
                 id="messageButton"
-                title="Student messages"
-                onclick="openMessages()">
+                title="Alerts"
+                onclick="openAlerts()">
 
                 <span class="message-icon">
                     ✉
@@ -369,7 +683,7 @@
                     class="message-badge"
                     id="messageCount">
 
-                    03
+                    0
 
                 </span>
 
@@ -516,6 +830,13 @@
 
 
     <!-- =====================================================
+         INTEGRITY TERMINATION BANNER
+    ====================================================== -->
+
+    <div class="terminated-banner" id="terminatedBanner"></div>
+
+
+    <!-- =====================================================
          STUDENT OVERVIEW
     ====================================================== -->
 
@@ -537,7 +858,9 @@
             </div>
 
 
-            <button class="view-button">
+            <button class="view-button"
+                    type="button"
+                    onclick="openLiveMonitoring()">
                 View all
                 <span>↗</span>
             </button>
@@ -545,296 +868,12 @@
         </div>
 
 
-        <div class="student-grid">
-
-
-            <!-- =================================================
-                 STUDENT CARD 01
-            ================================================== -->
-
-            <article class="student-card normal">
-
-                <div class="student-top">
-
-                    <div class="student-avatar avatar-green">
-                        A
-                    </div>
-
-                    <span class="status-tag safe">
-                        ● STABLE
-                    </span>
-
-                </div>
-
-
-                <div class="student-name">
-                    Student 01
-                </div>
-
-
-                <div class="student-id">
-                    ID / STU-001
-                </div>
-
-
-                <div class="student-score">
-
-                    <div>
-
-                        <span>
-                            Trust
-                        </span>
-
-                        <strong>
-                            100
-                        </strong>
-
-                    </div>
-
-
-                    <div class="score-bar">
-
-                        <span style="width:100%"></span>
-
-                    </div>
-
-                </div>
-
-
-                <div class="student-footer">
-
-                    <span>
-                        Waiting for live data
-                    </span>
-
-                    <button
-                        type="button"
-                        onclick="openStudentFromCard(this)">
-
-                        →
-
-                    </button>
-
-                </div>
-
-            </article>
-
-
-            <!-- =================================================
-                 STUDENT CARD 02
-            ================================================== -->
-
-            <article class="student-card warning-card">
-
-                <div class="student-top">
-
-                    <div class="student-avatar avatar-yellow">
-                        R
-                    </div>
-
-                    <span class="status-tag warning">
-                        ● REVIEW
-                    </span>
-
-                </div>
-
-
-                <div class="student-name">
-                    Student 02
-                </div>
-
-
-                <div class="student-id">
-                    ID / STU-002
-                </div>
-
-
-                <div class="student-score">
-
-                    <div>
-
-                        <span>
-                            Trust
-                        </span>
-
-                        <strong>
-                            72
-                        </strong>
-
-                    </div>
-
-
-                    <div class="score-bar">
-
-                        <span style="width:72%"></span>
-
-                    </div>
-
-                </div>
-
-
-                <div class="student-footer">
-
-                    <span>
-                        Phone event detected
-                    </span>
-
-                    <button
-                        type="button"
-                        onclick="openStudentFromCard(this)">
-
-                        →
-
-                    </button>
-
-                </div>
-
-            </article>
-
-
-            <!-- =================================================
-                 STUDENT CARD 03
-            ================================================== -->
-
-            <article class="student-card purple-card student-overlap">
-
-                <div class="student-top">
-
-                    <div class="student-avatar avatar-purple">
-                        M
-                    </div>
-
-                    <span class="status-tag safe">
-                        ● STABLE
-                    </span>
-
-                </div>
-
-
-                <div class="student-name">
-                    Student 03
-                </div>
-
-
-                <div class="student-id">
-                    ID / STU-003
-                </div>
-
-
-                <div class="student-score">
-
-                    <div>
-
-                        <span>
-                            Trust
-                        </span>
-
-                        <strong>
-                            94
-                        </strong>
-
-                    </div>
-
-
-                    <div class="score-bar">
-
-                        <span style="width:94%"></span>
-
-                    </div>
-
-                </div>
-
-
-                <div class="student-footer">
-
-                    <span>
-                        Face detected
-                    </span>
-
-                    <button
-                        type="button"
-                        onclick="openStudentFromCard(this)">
-
-                        →
-
-                    </button>
-
-                </div>
-
-            </article>
-
-
-            <!-- =================================================
-                 STUDENT CARD 04
-            ================================================== -->
-
-            <article class="student-card pink-card">
-
-                <div class="student-top">
-
-                    <div class="student-avatar avatar-pink">
-                        S
-                    </div>
-
-                    <span class="status-tag danger">
-                        ● ALERT
-                    </span>
-
-                </div>
-
-
-                <div class="student-name">
-                    Student 04
-                </div>
-
-
-                <div class="student-id">
-                    ID / STU-004
-                </div>
-
-
-                <div class="student-score">
-
-                    <div>
-
-                        <span>
-                            Trust
-                        </span>
-
-                        <strong>
-                            48
-                        </strong>
-
-                    </div>
-
-
-                    <div class="score-bar">
-
-                        <span style="width:48%"></span>
-
-                    </div>
-
-                </div>
-
-
-                <div class="student-footer">
-
-                    <span>
-                        Multiple violations
-                    </span>
-
-                    <button
-                        type="button"
-                        onclick="openStudentFromCard(this)">
-
-                        →
-
-                    </button>
-
-                </div>
-
-            </article>
-
+        <div class="student-list" id="studentGrid">
+
+            <div class="student-grid-empty" id="studentGridEmpty">
+                No students are currently writing an exam. Once a
+                student goes ONLINE, their live row will appear here.
+            </div>
 
         </div>
 
@@ -1162,7 +1201,7 @@ async function openStudent(studentId) {
 function openStudentFromCard(button) {
 
     const card =
-        button.closest(".student-card");
+        button.closest(".student-row");
 
     if (!card) {
         return;
@@ -1271,14 +1310,681 @@ function openMonitoring() {
    TEACHER / STUDENT MESSAGES
 ========================================================= */
 
-function openSubmissions() { openReports("Submissions"); }
+function openSubmissions() {
+
+    const modal = document.getElementById("evaluationsModal");
+
+    if (!modal) return;
+
+    document.getElementById("evaluationDetail").classList.remove("open");
+
+    document.getElementById("evaluationsList").style.display = "";
+
+    modal.classList.add("open");
+
+    loadSubmissions();
+
+}
 
 
-function openMessages() {
+function closeEvaluations() {
 
-    console.log(
-        "Student message panel requested."
-    );
+    document.getElementById("evaluationsModal")?.classList.remove("open");
+
+}
+
+
+/* =========================================================
+   SUBMISSIONS + EVALUATION
+========================================================= */
+
+let cachedSubmissions = [];
+
+
+async function loadSubmissions() {
+
+    const list = document.getElementById("evaluationsList");
+
+    if (!list) return;
+
+    list.innerHTML =
+        '<div class="empty-reports">Loading submissions...</div>';
+
+    try {
+
+        const response = await fetch("/api/submissions", {
+            cache: "no-store"
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data || data.success !== true) {
+            throw new Error(data.error || "Unable to load submissions");
+        }
+
+        cachedSubmissions = Array.isArray(data.submissions)
+            ? data.submissions
+            : [];
+
+        updateSubmissionCounters(data);
+
+        if (cachedSubmissions.length === 0) {
+
+            list.innerHTML =
+                '<div class="empty-reports">No student has submitted an exam yet.</div>';
+
+            return;
+
+        }
+
+        list.innerHTML = cachedSubmissions
+            .map(submissionCardHtml)
+            .join("");
+
+        lucide.createIcons();
+
+    }
+
+    catch (error) {
+
+        console.log("Submission load error:", error);
+
+        list.innerHTML =
+            '<div class="empty-reports">Unable to load submissions right now.</div>';
+
+    }
+
+}
+
+
+function updateSubmissionCounters(data) {
+
+    const submitted = document.getElementById("submittedStudents");
+    const evaluated = document.getElementById("evaluatedStudents");
+    const pending = document.getElementById("pendingSubmissions");
+
+    if (submitted) submitted.innerText = Number(data.count || 0);
+    if (evaluated) evaluated.innerText = Number(data.evaluated || 0);
+    if (pending) pending.innerText = Number(data.pending || 0);
+
+}
+
+
+function submissionCardHtml(sub) {
+
+    const status = String(sub.status || "SUBMITTED").toUpperCase();
+    const type = String(sub.evaluation_type || "AUTO").toUpperCase();
+
+    const isPending = status === "PENDING_REVIEW";
+
+    const marks = sub.teacher_marks != null
+        ? sub.teacher_marks
+        : (sub.score != null ? sub.score : "—");
+
+    const typeClass = isPending
+        ? "pending"
+        : (type === "MANUAL" ? "manual" : "auto");
+
+    return `
+        <article class="submission-card">
+            <div class="submission-top">
+                <div>
+                    <div class="submission-student">${escapeHtml(sub.student_name || sub.student_id || "UNKNOWN")}</div>
+                    <div class="submission-exam">${escapeHtml(sub.exam_name || sub.exam_id || "Exam")} · ${escapeHtml(sub.student_id || "")}</div>
+                </div>
+                <div class="submission-badges">
+                    <span class="eval-badge ${typeClass}">${escapeHtml(isPending ? "NEEDS REVIEW" : type)}</span>
+                    <span class="eval-badge">TRUST ${escapeHtml(sub.trust_score != null ? sub.trust_score : "—")}</span>
+                </div>
+            </div>
+            <div class="submission-metrics">
+                <div class="submission-metric"><span>MARKS</span><strong>${escapeHtml(marks)}</strong></div>
+                <div class="submission-metric"><span>QUESTIONS</span><strong>${escapeHtml(sub.total_questions || 0)}</strong></div>
+                <div class="submission-metric"><span>VIOLATIONS</span><strong>${Number(sub.violation_count || 0)}</strong></div>
+                <div class="submission-metric"><span>EVIDENCE</span><strong>${Number(sub.evidence_count || 0)}</strong></div>
+                <div class="submission-metric"><span>SUBMITTED</span><strong style="font-size:12px">${escapeHtml(sub.submitted_at || "—")}</strong></div>
+            </div>
+            <div class="submission-actions">
+                <button class="teacher-btn" data-review="${escapeHtml(sub.submission_id)}">${isPending ? "REVIEW & GRADE" : "REVIEW / RE-GRADE"}</button>
+                <button class="teacher-btn secondary" data-subreport="${escapeHtml(sub.submission_id)}">OPEN REPORT</button>
+                <button class="teacher-btn danger" data-delsub="${escapeHtml(sub.submission_id)}">DELETE</button>
+            </div>
+        </article>
+    `;
+
+}
+
+
+
+
+
+async function openSubmissionReview(submissionId) {
+
+    const list = document.getElementById("evaluationsList");
+    const detail = document.getElementById("evaluationDetail");
+
+    if (!detail) return;
+
+    detail.innerHTML =
+        '<div class="empty-reports">Loading answer sheet...</div>';
+
+    detail.classList.add("open");
+
+    if (list) list.style.display = "none";
+
+    try {
+
+        const response = await fetch(
+            "/api/submissions/" + encodeURIComponent(submissionId),
+            { cache: "no-store" }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data || data.success !== true || !data.submission) {
+            throw new Error(data.error || "Submission not found");
+        }
+
+        const sub = data.submission;
+        const review = Array.isArray(sub.answer_review) ? sub.answer_review : [];
+
+        const answersHtml = review.length
+            ? review.map(item => {
+
+                const cls = item.student_answer
+                    ? (item.is_correct ? "correct" : "wrong")
+                    : "";
+
+                return `<div class="answer-row ${cls}">
+                    <div class="answer-q">Q${item.index + 1}. ${escapeHtml(item.question || "")}</div>
+                    <div class="answer-meta">
+                        Student: <b>${escapeHtml(item.student_answer || "Not answered")}</b>${item.student_answer_text ? " · " + escapeHtml(item.student_answer_text) : ""}<br>
+                        Correct: <b>${escapeHtml(item.correct_answer || "—")}</b>${item.correct_answer_text ? " · " + escapeHtml(item.correct_answer_text) : ""}
+                    </div>
+                </div>`;
+
+            }).join("")
+            : '<div class="empty-reports">No answer sheet available for this submission.</div>';
+
+        const feedback = sub.teacher_feedback || "";
+
+        detail.innerHTML = `
+            <button class="teacher-btn secondary" onclick="backToEvaluations()" style="margin-bottom:18px">← BACK TO SUBMISSIONS</button>
+            <h2>${escapeHtml(sub.student_name || sub.student_id || "UNKNOWN")}</h2>
+            <p>${escapeHtml(sub.exam_name || "")} · ${escapeHtml(sub.student_id || "")} · ${escapeHtml(sub.status || "")}</p>
+            <div class="report-summary">
+                <div class="detail-box"><span>MARKS</span><strong>${escapeHtml(sub.score != null ? sub.score : "—")}</strong></div>
+                <div class="detail-box"><span>TRUST SCORE</span><strong>${escapeHtml(sub.trust_score != null ? sub.trust_score : "—")}</strong></div>
+                <div class="detail-box"><span>ANSWERED</span><strong>${Number(sub.answered_count || 0)}/${Number(sub.total_questions || 0)}</strong></div>
+                <div class="detail-box"><span>EVALUATION</span><strong>${escapeHtml(sub.evaluation_type || "—")}</strong></div>
+            </div>
+            <div class="detail-section">
+                <h3>Answer Sheet</h3>
+                ${answersHtml}
+            </div>
+            <div class="detail-section">
+                <h3>Manual Evaluation</h3>
+                <div class="eval-grid">
+                    <label style="display:grid;gap:7px;font-size:12px;font-weight:600">Marks (0 - 100)
+                        <input class="teacher-input" type="number" min="0" max="100" id="manualMarks" value="${sub.teacher_marks != null ? Number(sub.teacher_marks) : (sub.score != null ? Number(sub.score) : "")}">
+                    </label>
+                    <label style="display:grid;gap:7px;font-size:12px;font-weight:600">Feedback
+                        <input class="teacher-input" type="text" id="manualFeedback" value="${escapeHtml(feedback)}" placeholder="Optional note for the report">
+                    </label>
+                </div>
+                <div style="margin-top:14px" id="manualMessage"></div>
+                <div class="submission-actions" style="margin-top:12px">
+                    <button class="teacher-btn" id="saveMarksButton">SAVE MARKS</button>
+                    <button class="teacher-btn secondary" onclick="window.open('/submission-report/${escapeHtml(sub.submission_id)}','_blank')">OPEN FULL REPORT</button>
+                </div>
+            </div>
+        `;
+
+        document.getElementById("saveMarksButton").onclick = function () {
+            saveManualMarks(sub.submission_id);
+        };
+
+    }
+
+    catch (error) {
+
+        console.log("Submission review error:", error);
+
+        detail.innerHTML = '<button class="teacher-btn secondary" onclick="backToEvaluations()" style="margin-bottom:18px">← BACK TO SUBMISSIONS</button><div class="empty-reports">Unable to load this submission.</div>';
+
+    }
+
+}
+
+
+function backToEvaluations() {
+
+    document.getElementById("evaluationDetail")?.classList.remove("open");
+
+    const list = document.getElementById("evaluationsList");
+
+    if (list) list.style.display = "";
+
+    loadSubmissions();
+
+}
+
+
+async function saveManualMarks(submissionId) {
+
+    const marksInput = document.getElementById("manualMarks");
+    const feedbackInput = document.getElementById("manualFeedback");
+    const message = document.getElementById("manualMessage");
+    const button = document.getElementById("saveMarksButton");
+
+    if (!marksInput) return;
+
+    const marks = Number(marksInput.value);
+
+    if (!Number.isFinite(marks) || marks < 0 || marks > 100) {
+
+        if (message) message.innerHTML =
+            '<span style="color:#b8342c">Enter marks between 0 and 100.</span>';
+
+        return;
+
+    }
+
+    if (button) {
+        button.disabled = true;
+        button.innerText = "Saving...";
+    }
+
+    try {
+
+        const response = await fetch(
+            "/api/submissions/" + encodeURIComponent(submissionId) + "/evaluate",
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    marks: marks,
+                    feedback: feedbackInput ? feedbackInput.value : ""
+                })
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || "Unable to save marks");
+        }
+
+        if (message) message.innerHTML =
+            '<span style="color:#2f6b55">Marks saved and report regenerated.</span>';
+
+        loadSubmissions();
+
+    }
+
+    catch (error) {
+
+        if (message) message.innerHTML =
+            '<span style="color:#b8342c">' + escapeHtml(error.message) + '</span>';
+
+    }
+
+    finally {
+
+        if (button) {
+            button.disabled = false;
+            button.innerText = "SAVE MARKS";
+        }
+
+    }
+
+}
+
+
+async function deleteSubmission(submissionId) {
+
+    if (!window.confirm("Delete this submission and its generated report?")) {
+        return;
+    }
+
+    try {
+
+        const response = await fetch(
+            "/api/submissions/" + encodeURIComponent(submissionId),
+            { method: "DELETE" }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || "Unable to delete submission");
+        }
+
+        loadSubmissions();
+
+    }
+
+    catch (error) {
+
+        window.alert(error.message);
+
+    }
+
+}
+
+
+/* =========================================================
+   LIVE MONITORING SHORTCUT
+========================================================= */
+
+function openLiveMonitoring() {
+
+    const live = Array.from(
+        document.querySelectorAll(".student-row .student-id")
+    ).map(node => String(node.innerText || "").replace("ID /", "").trim())
+     .filter(Boolean);
+
+    if (live.length === 1) {
+
+        openStudent(live[0]);
+
+        return;
+
+    }
+
+    const section = document.querySelector(".students-section");
+
+    if (section) section.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    if (live.length === 0) {
+
+        window.alert("No student is monitoring right now.");
+
+    }
+
+}
+
+
+/* =========================================================
+   ALERTS  (terminated / high risk sessions)
+========================================================= */
+
+function openAlerts() {
+
+    const modal = document.getElementById("alertsModal");
+
+    if (!modal) return;
+
+    modal.classList.add("open");
+
+    loadAlerts();
+
+}
+
+
+function closeAlerts() {
+
+    document.getElementById("alertsModal")?.classList.remove("open");
+
+}
+
+
+let cachedAlerts = [];
+
+
+async function loadAlerts() {
+
+    const list = document.getElementById("alertsList");
+
+    if (!list) return;
+
+    try {
+
+        const response = await fetch("/api/reports", { cache: "no-store" });
+
+        const data = await response.json();
+
+        cachedAlerts = (data && Array.isArray(data.reports))
+            ? data.reports.filter(
+                report => report.terminated ||
+                    Number(report.final_trust_score ?? 100) < 50
+            )
+            : [];
+
+        const badge = document.getElementById("messageCount");
+
+        if (badge) badge.innerText = cachedAlerts.length;
+
+        if (cachedAlerts.length === 0) {
+
+            list.innerHTML =
+                '<div class="empty-reports">No integrity alerts. Every recorded session is above the alert threshold.</div>';
+
+            return;
+
+        }
+
+        list.innerHTML = cachedAlerts.map(report => {
+
+            const terminated = Boolean(report.terminated);
+
+            return `<div class="alert-row ${terminated ? "" : "info"}">
+                <div>
+                    <strong>${escapeHtml(report.student_name || report.student_id || "UNKNOWN")}</strong>
+                    <div style="font-size:12px;color:#7c7c74">
+                        ${escapeHtml(report.exam_name || "")} · Trust ${escapeHtml(report.final_trust_score != null ? report.final_trust_score : "—")} · ${escapeHtml(report.final_risk_level || "")}
+                    </div>
+                    <div style="font-size:11px;color:#9a9a92;margin-top:4px">
+                        ${terminated ? "TERMINATED at Trust Score 0 · report generated" : "High risk session"} · ${escapeHtml(report.session_id || "")}
+                    </div>
+                </div>
+                <button class="teacher-btn" data-alert-session="${escapeHtml(report.session_id || "")}">OPEN REPORT</button>
+            </div>`;
+
+        }).join("");
+
+        list.querySelectorAll("[data-alert-session]").forEach(button => {
+
+            button.addEventListener("click", function () {
+
+                closeAlerts();
+                openReports("Integrity Alerts");
+                openReportDetail(button.dataset.alertSession);
+
+            });
+
+        });
+
+    }
+
+    catch (error) {
+
+        console.log("Alerts load error:", error);
+
+        list.innerHTML =
+            '<div class="empty-reports">Unable to load alerts right now.</div>';
+
+    }
+
+}
+
+
+/* =========================================================
+   TERMINATION WATCHER
+   When a student's Trust Score hits 0 the backend terminates
+   the session, stops the live feed and writes a report. This
+   watcher surfaces that instantly on the teacher dashboard.
+========================================================= */
+
+const seenTerminatedSessions = new Set();
+
+
+async function checkTerminatedStudents() {
+
+    try {
+
+        const response = await fetch("/api/reports", { cache: "no-store" });
+
+        const data = await response.json();
+
+        if (!response.ok || !data || data.success !== true) return;
+
+        const terminated = (data.reports || []).filter(
+            report => report.terminated
+        );
+
+        const badge = document.getElementById("messageCount");
+
+        if (badge) badge.innerText = terminated.length;
+
+        const banner = document.getElementById("terminatedBanner");
+
+        if (!banner) return;
+
+        const fresh = terminated.filter(
+            report => !seenTerminatedSessions.has(report.session_id)
+        );
+
+        terminated.forEach(report =>
+            seenTerminatedSessions.add(report.session_id)
+        );
+
+        if (fresh.length === 0) return;
+
+        const latest = fresh[0];
+
+        banner.innerHTML = `
+            <div>
+                <strong>Session terminated at Trust Score 0</strong>
+                <div style="font-size:13px;color:#7a3a34">
+                    ${escapeHtml(latest.student_name || latest.student_id || "A student")}
+                    · ${escapeHtml(latest.exam_name || "")}
+                    · live feed stopped · report generated
+                </div>
+            </div>
+            <button class="teacher-btn" id="terminatedBannerButton">OPEN REPORT</button>
+        `;
+
+        banner.classList.add("show");
+
+        document.getElementById("terminatedBannerButton").onclick = function () {
+
+            banner.classList.remove("show");
+            openReports("Integrity Alerts");
+            openReportDetail(latest.session_id);
+
+        };
+
+        // A terminated student must disappear from the live list.
+        updateDashboard();
+
+    }
+
+    catch (error) {
+
+        console.log("Termination watch error:", error);
+
+    }
+
+}
+
+
+/* =========================================================
+   SETTINGS
+========================================================= */
+
+function openSettings() {
+
+    const modal = document.getElementById("settingsModal");
+
+    if (!modal) return;
+
+    modal.classList.add("open");
+
+    loadSettings();
+
+}
+
+
+function closeSettings() {
+
+    document.getElementById("settingsModal")?.classList.remove("open");
+
+}
+
+
+async function loadSettings() {
+
+    const target = document.getElementById("settingsBody");
+
+    if (!target) return;
+
+    target.innerHTML =
+        '<div class="empty-reports">Loading system information...</div>';
+
+    try {
+
+        const response = await fetch("/api/system", { cache: "no-store" });
+
+        const data = await response.json();
+
+        target.innerHTML = `
+            <div class="submission-metrics">
+                <div class="submission-metric"><span>DATABASE</span><strong style="font-size:14px">${escapeHtml(data.database || "MYSQL")}</strong></div>
+                <div class="submission-metric"><span>MONITORED SESSIONS</span><strong>${Number(data.sessions || 0)}</strong></div>
+                <div class="submission-metric"><span>ENROLLED STUDENTS</span><strong>${Number(data.enrolled_students || 0)}</strong></div>
+                <div class="submission-metric"><span>EXAMS</span><strong>${Number(data.exams || 0)}</strong></div>
+                <div class="submission-metric"><span>SUBMISSIONS</span><strong>${Number(data.submissions || 0)}</strong></div>
+                <div class="submission-metric"><span>VIOLATIONS</span><strong>${Number(data.violations || 0)}</strong></div>
+                <div class="submission-metric"><span>EVIDENCE FILES</span><strong>${Number(data.evidence || 0)}</strong></div>
+                <div class="submission-metric"><span>SERVER TIME</span><strong style="font-size:12px">${escapeHtml(data.time || "")}</strong></div>
+            </div>
+            <div class="submission-actions">
+                <button class="teacher-btn secondary" id="refreshSettingsButton">REFRESH</button>
+                <button class="teacher-btn secondary" id="openExamsButton">MANAGE EXAMS</button>
+                <button class="teacher-btn danger" id="logoutButton">SIGN OUT</button>
+            </div>
+        `;
+
+        document.getElementById("refreshSettingsButton").onclick = loadSettings;
+
+        document.getElementById("openExamsButton").onclick = function () {
+
+            window.location.href = "/exams";
+
+        };
+
+        document.getElementById("logoutButton").onclick = teacherLogout;
+
+    }
+
+    catch (error) {
+
+        console.log("Settings load error:", error);
+
+        target.innerHTML =
+            '<div class="empty-reports">Unable to load system information.</div>';
+
+    }
+
+}
+
+
+async function teacherLogout() {
+
+    try {
+
+        await fetch("/api/teacher/logout", { method: "POST" });
+
+    }
+
+    catch (error) {
+
+        console.log("Logout error:", error);
+
+    }
+
+    window.location.href = "/";
 
 }
 
@@ -1322,7 +2028,7 @@ async function loadReports() {
             const sid = escapeHtml(report.session_id || "");
             const student = escapeHtml(report.student_id || "UNKNOWN");
             const exam = escapeHtml(report.exam_name || "PROCTIFY EXAM");
-            const trust = Number(report.final_trust_score ?? 100);
+            const trust = report.final_trust_score == null ? "—" : Number(report.final_trust_score);
             const risk = escapeHtml(report.final_risk_level || "LOW");
             const violations = Number(report.violation_count || 0);
             const evidence = Number(report.evidence_count || 0);
@@ -1359,7 +2065,7 @@ async function openReportDetail(sessionId) {
             const id = item && typeof item === "object" ? (item.id || item.evidence_id) : null;
             return id ? `<div><img src="/api/evidence/${encodeURIComponent(id)}/image" alt="PROCTIFY evidence" loading="lazy" onerror="this.parentElement.innerHTML='<div class=violation-row>Evidence image unavailable</div>'"></div>` : '<div class="violation-row">Evidence recorded</div>';
         }).join("") : '<div class="empty-reports">No evidence images were saved for this session.</div>';
-        detail.innerHTML = `<button class="report-action" onclick="backToReports()" style="max-width:180px;margin-bottom:18px">← BACK TO REPORTS</button><h2>${escapeHtml(report.student_id || "UNKNOWN")}</h2><p>${escapeHtml(report.exam_name || "PROCTIFY EXAM")}</p><div class="report-summary"><div class="detail-box"><span>FINAL TRUST</span><strong>${escapeHtml(report.final_trust_score ?? report.trust_score ?? 100)}</strong></div><div class="detail-box"><span>RISK LEVEL</span><strong>${escapeHtml(report.final_risk_level || report.risk_level || "LOW")}</strong></div><div class="detail-box"><span>VIOLATIONS</span><strong>${Number(report.total_violations ?? violations.length)}</strong></div><div class="detail-box"><span>EVIDENCE</span><strong>${Number(report.total_evidence ?? evidence.length)}</strong></div></div><div class="detail-section"><h3>Violation History</h3>${violationHtml}</div><div class="detail-section"><h3>Evidence</h3><div class="evidence-grid">${evidenceHtml}</div></div>`;
+        detail.innerHTML = `<button class="report-action" onclick="backToReports()" style="max-width:180px;margin-bottom:18px">← BACK TO REPORTS</button><h2>${escapeHtml(report.student_id || "UNKNOWN")}</h2><p>${escapeHtml(report.exam_name || "PROCTIFY EXAM")}</p><div class="report-summary"><div class="detail-box"><span>FINAL TRUST</span><strong>${escapeHtml(report.final_trust_score != null ? report.final_trust_score : (report.trust_score != null ? report.trust_score : "—"))}</strong></div><div class="detail-box"><span>RISK LEVEL</span><strong>${escapeHtml(report.final_risk_level || report.risk_level || "LOW")}</strong></div><div class="detail-box"><span>VIOLATIONS</span><strong>${Number(report.total_violations ?? violations.length)}</strong></div><div class="detail-box"><span>EVIDENCE</span><strong>${Number(report.total_evidence ?? evidence.length)}</strong></div></div><div class="detail-section"><h3>Violation History</h3>${violationHtml}</div><div class="detail-section"><h3>Evidence</h3><div class="evidence-grid">${evidenceHtml}</div></div>`;
     } catch (error) {
         console.log("Report detail error:", error);
         detail.innerHTML = '<button class="report-action" onclick="backToReports()" style="max-width:180px;margin-bottom:18px">← BACK TO REPORTS</button><div class="empty-reports">Unable to load this complete report.</div>';
@@ -1372,9 +2078,75 @@ function backToReports() {
     if (list) list.style.display = "";
 }
 
-document.getElementById("reportsModal")?.addEventListener("click", event => {
-    if (event.target.id === "reportsModal") closeReports();
-});
+/* =========================================================
+   PANEL EVENT BINDING
+   The modal markup lives at the END of the document, so these
+   listeners are attached after DOMContentLoaded. Binding them
+   inline at parse time silently did nothing before.
+========================================================= */
+
+function bindDashboardPanelEvents() {
+
+    [
+        ["reportsModal", closeReports],
+        ["evaluationsModal", closeEvaluations],
+        ["alertsModal", closeAlerts],
+        ["settingsModal", closeSettings]
+    ].forEach(function (entry) {
+
+        const modal = document.getElementById(entry[0]);
+
+        if (!modal) return;
+
+        modal.addEventListener("click", function (event) {
+
+            if (event.target === modal) entry[1]();
+
+        });
+
+    });
+
+    const evaluationsList = document.getElementById("evaluationsList");
+
+    if (evaluationsList) {
+
+        evaluationsList.addEventListener("click", function (event) {
+
+            const review = event.target.closest("[data-review]");
+            const report = event.target.closest("[data-subreport]");
+            const remove = event.target.closest("[data-delsub]");
+
+            if (review) openSubmissionReview(review.dataset.review);
+
+            if (report) window.open(
+                "/submission-report/" + encodeURIComponent(report.dataset.subreport),
+                "_blank"
+            );
+
+            if (remove) deleteSubmission(remove.dataset.delsub);
+
+        });
+
+    }
+
+    const enrolledList = document.getElementById("enrolledStudentsList");
+
+    if (enrolledList) {
+
+        enrolledList.addEventListener("click", function (event) {
+
+            const button = event.target.closest("[data-delete-student]");
+
+            if (button) deleteEnrolledStudent(button.dataset.deleteStudent);
+
+        });
+
+    }
+
+}
+
+
+document.addEventListener("DOMContentLoaded", bindDashboardPanelEvents);
 
 /* =========================================================
    UPDATE MONITORING HEALTH
@@ -1988,6 +2760,177 @@ function updateStudentHealth(
 
 
 /* =========================================================
+   CREATE STUDENT ROW
+   Builds a fresh LIST ROW for a genuinely ONLINE student.
+========================================================= */
+
+function createStudentCard(student) {
+
+    const card =
+        document.createElement(
+            "article"
+        );
+
+    card.className =
+        "student-row normal";
+
+    const studentId =
+        escapeHtml(
+            student.student_id ||
+            "UNKNOWN"
+        );
+
+    const initial =
+        escapeHtml(
+            String(
+                student.student_id ||
+                "S"
+            ).charAt(0).toUpperCase()
+        );
+
+    card.innerHTML = `
+
+        <div class="student-top">
+
+            <div class="student-avatar">
+                ${initial}
+            </div>
+
+            <span class="status-tag safe">
+                ● STABLE
+            </span>
+
+        </div>
+
+        <div class="student-identity">
+
+            <div class="student-name">
+                ${studentId}
+            </div>
+
+            <div class="student-id">
+                ID / ${studentId}
+            </div>
+
+        </div>
+
+        <div class="student-score">
+
+            <div class="student-score-label">
+
+                <span>
+                    Trust
+                </span>
+
+                <strong>
+                    —
+                </strong>
+
+            </div>
+
+            <div class="score-bar">
+
+                <span style="width:0%"></span>
+
+            </div>
+
+        </div>
+
+        <div class="student-footer">
+
+            <span>
+                Monitoring offline
+            </span>
+
+            <button
+                type="button">
+
+                →
+
+            </button>
+
+        </div>
+
+    `;
+
+    return card;
+
+}
+
+
+/* =========================================================
+   RENDER STUDENT CARDS
+   Rebuilds the Live Classroom grid from the current list of
+   ONLINE students. Supports any number of simultaneous live
+   students (previously the grid was capped at four placeholder
+   cards with fake names, IDs and trust scores).
+========================================================= */
+
+function renderStudentCards(liveStudents) {
+
+    const grid =
+        document.getElementById(
+            "studentGrid"
+        );
+
+    if (!grid) {
+        return;
+    }
+
+    const empty =
+        document.getElementById(
+            "studentGridEmpty"
+        );
+
+    if (empty) {
+
+        empty.style.display =
+            Array.isArray(liveStudents) &&
+            liveStudents.length === 0
+                ? ""
+                : "none";
+
+    }
+
+    grid
+        .querySelectorAll(
+            ".student-row"
+        )
+        .forEach(
+            card =>
+                card.remove()
+        );
+
+    if (
+        !Array.isArray(liveStudents)
+    ) {
+        return;
+    }
+
+    liveStudents.forEach(
+        student => {
+
+            const card =
+                createStudentCard(
+                    student
+                );
+
+            updateStudentCard(
+                card,
+                student
+            );
+
+            grid.appendChild(
+                card
+            );
+
+        }
+    );
+
+}
+
+
+/* =========================================================
    UPDATE STUDENT CARD
 ========================================================= */
 
@@ -2002,11 +2945,11 @@ function updateStudentCard(
 
 
     /*
-     * Save currently selected student.
+     * Saving the selection globally is intentionally avoided here:
+     * updateStudentCard runs for every row, so writing
+     * currentStudentId here made "Monitor selected student" always
+     * point at the LAST student in the list.
      */
-
-    currentStudentId =
-        student.student_id || null;
 
 
     /* -------------------------------------------------------
@@ -2052,22 +2995,55 @@ function updateStudentCard(
 
     /* -------------------------------------------------------
        TRUST SCORE
+       A genuine score of 0 is preserved as 0. A missing or
+       non-numeric score is never fabricated as 100.
     ------------------------------------------------------- */
 
-    let score =
-        Number(
-            student.trust_score
+    const rawScore =
+        student.trust_score;
+
+    const scoreIsNumber =
+        rawScore !== null &&
+        rawScore !== undefined &&
+        rawScore !== "" &&
+        Number.isFinite(
+            Number(rawScore)
         );
 
+    let score =
+        scoreIsNumber
+            ? Number(rawScore)
+            : null;
 
-    if (
-        Number.isNaN(score)
-    ) {
 
-        score = 100;
+    if (score === null) {
+
+        const scoreElement =
+            card.querySelector(
+                ".student-score strong"
+            );
+
+        if (scoreElement) {
+
+            scoreElement.innerText =
+                "—";
+
+        }
+
+        const scoreBar =
+            card.querySelector(
+                ".score-bar span"
+            );
+
+        if (scoreBar) {
+
+            scoreBar.style.width =
+                "0%";
+
+        }
 
     }
-
+    else {
 
     score =
         Math.max(
@@ -2110,6 +3086,7 @@ function updateStudentCard(
 
     }
 
+    } /* end score !== null */
 
     /* -------------------------------------------------------
        STATUS / RISK
@@ -2168,7 +3145,12 @@ function updateStudentCard(
     if (arrowButton) {
 
         arrowButton.onclick =
-            function () {
+            function (event) {
+
+                event.stopPropagation();
+
+                currentStudentId =
+                    student.student_id || null;
 
                 openStudent(
                     student.student_id
@@ -2177,6 +3159,33 @@ function updateStudentCard(
             };
 
     }
+
+
+    /*
+     * Clicking anywhere on the row selects that student,
+     * which is what "Monitor selected student" then opens.
+     */
+
+    card.onclick =
+        function () {
+
+            currentStudentId =
+                student.student_id || null;
+
+            document
+                .querySelectorAll(
+                    ".student-row.selected"
+                )
+                .forEach(
+                    row =>
+                        row.classList.remove(
+                            "selected"
+                        )
+                );
+
+            card.classList.add("selected");
+
+        };
 
 }
 
@@ -2634,52 +3643,12 @@ async function updateDashboard() {
 
         /* =====================================================
            STUDENT CARDS
+           Cards are built dynamically for every ONLINE student.
+           No fake or static student data is ever rendered.
         ===================================================== */
 
-        const cards =
-            document.querySelectorAll(
-                ".student-card"
-            );
-
-        /*
-         * Always hide every design placeholder first.
-         * Only real ONLINE students will be shown.
-         */
-        cards.forEach(
-            card => {
-
-                card.style.display =
-                    "none";
-
-            }
-        );
-
-        /*
-         * Reuse the existing card design for
-         * each currently ONLINE student.
-         */
-        liveStudents.forEach(
-            (
-                student,
-                index
-            ) => {
-
-                if (
-                    !cards[index]
-                ) {
-
-                    return;
-                }
-
-                cards[index].style.display =
-                    "";
-
-                updateStudentCard(
-                    cards[index],
-                    student
-                );
-
-            }
+        renderStudentCards(
+            liveStudents
         );
 
         if (
@@ -3533,6 +4502,7 @@ updateCurrentExam();
 updateDashboard();
 updateSubmissions();
 updateEnrolledStudentCount();
+checkTerminatedStudents();
 
 
 /*
@@ -3550,6 +4520,10 @@ setInterval(
 setInterval(
     updateEnrolledStudentCount,
     2000
+);
+setInterval(
+    checkTerminatedStudents,
+    3000
 );
 
 
@@ -3764,6 +4738,17 @@ async function loadEnrolledStudents() {
                                 ${escapeEnrollmentHtml(studentId)}
                             </div>
 
+
+                            <button
+                                type="button"
+                                class="teacher-btn danger enrolled-delete"
+                                data-delete-student="${escapeEnrollmentHtml(studentId)}"
+                                title="Delete this student and all of their data">
+
+                                DELETE
+
+                            </button>
+
                         </div>
 
                     `;
@@ -3789,6 +4774,53 @@ async function loadEnrolledStudents() {
     }
 
 }
+
+
+/* =========================================================
+   DELETE ENROLLED STUDENT
+   Removes the account, its face profile, every session,
+   violation, evidence image, assignment and submission.
+========================================================= */
+
+async function deleteEnrolledStudent(studentId) {
+
+    if (!studentId) return;
+
+    if (!window.confirm(
+        "Delete student \"" + studentId + "\"?\n\n" +
+        "All of their sessions, violations, evidence images and " +
+        "submissions are deleted too."
+    )) return;
+
+    try {
+
+        const response = await fetch(
+            "/api/students/" + encodeURIComponent(studentId),
+            { method: "DELETE" }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || "Unable to delete student");
+        }
+
+        await loadEnrolledStudents();
+
+        updateEnrolledStudentCount();
+
+    }
+
+    catch (error) {
+
+        window.alert(error.message);
+
+    }
+
+}
+
+
+
 
 
 /* =========================================================
@@ -3980,6 +5012,171 @@ async function submitEnrollment(event) {
 
 
 /* =========================================================
+   BULK ENROLLMENT - EXCEL UPLOAD
+========================================================= */
+
+async function uploadEnrollmentExcel() {
+
+    const fileInput =
+        document.getElementById(
+            "enrollExcelInput"
+        );
+
+    const message =
+        document.getElementById(
+            "enrollExcelMessage"
+        );
+
+    const button =
+        document.getElementById(
+            "enrollExcelButton"
+        );
+
+    const label =
+        document.getElementById(
+            "enrollExcelLabel"
+        );
+
+    if (!fileInput) {
+        return;
+    }
+
+    if (
+        fileInput.files.length === 0
+    ) {
+        fileInput.click();
+        return;
+    }
+
+    const file =
+        fileInput.files[0];
+
+    if (
+        !file.name.toLowerCase().endsWith(".xlsx")
+    ) {
+        message.className =
+            "enrollment-message error";
+        message.innerText =
+            "Please choose a .xlsx file.";
+        return;
+    }
+
+    if (button) {
+        button.disabled = true;
+    }
+
+    if (label) {
+        label.innerText =
+            "Uploading...";
+    }
+
+    if (message) {
+        message.className =
+            "enrollment-message";
+        message.innerText = "";
+    }
+
+    try {
+
+        const formData =
+            new FormData();
+
+        formData.append(
+            "file",
+            file
+        );
+
+        const response =
+            await fetch(
+                "/api/students/enroll/excel",
+                {
+                    method: "POST",
+                    body: formData
+                }
+            );
+
+        const data =
+            await response.json();
+
+        if (
+            !response.ok ||
+            !data.success
+        ) {
+
+            message.className =
+                "enrollment-message error";
+
+            message.innerText =
+                data.error ||
+                "Excel enrollment failed.";
+
+            return;
+        }
+
+        const failureText =
+            Array.isArray(data.failures) &&
+            data.failures.length > 0
+                ? " Warnings: " +
+                    data.failures
+                        .slice(0, 5)
+                        .map(
+                            f =>
+                                "row " +
+                                f.row +
+                                " " +
+                                f.reason
+                        )
+                        .join("; ")
+                : "";
+
+        message.className =
+            "enrollment-message success";
+
+        message.innerText =
+            "Inserted " +
+            data.inserted +
+            ", skipped " +
+            data.duplicate +
+            " duplicate(s)." +
+            failureText;
+
+        await loadEnrolledStudents();
+
+        fileInput.value = "";
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Excel enrollment error:",
+            error
+        );
+
+        message.className =
+            "enrollment-message error";
+
+        message.innerText =
+            error.message;
+
+    }
+
+    finally {
+
+        if (button) {
+            button.disabled = false;
+        }
+
+        if (label) {
+            label.innerText =
+                "Upload .xlsx";
+        }
+
+    }
+
+}
+
+/* =========================================================
    ENROLLMENT EVENT LISTENERS
 ========================================================= */
 
@@ -4054,6 +5251,22 @@ document.addEventListener(
                 <span>ENROLLED</span>
             </div>
         </div>
+        <div class="excel-upload-panel">
+            <div class="excel-upload-info">
+                <strong>Bulk enroll from Excel</strong>
+                <span>Upload a .xlsx file with columns:
+                    <code>student_id, student_name, username, password</code></span>
+            </div>
+            <input type="file" id="enrollExcelInput" accept=".xlsx" hidden>
+            <div class="excel-upload-actions">
+                <button type="button" id="enrollExcelButton" class="enroll-submit excel-btn" onclick="uploadEnrollmentExcel()">
+                    <span id="enrollExcelLabel">Upload .xlsx</span>
+                    <span>→</span>
+                </button>
+                <a class="excel-template-link" href="/api/excel/enrollment-template" download>Download template</a>
+            </div>
+            <div id="enrollExcelMessage" class="enrollment-message"></div>
+        </div>
         <div class="enrollment-layout">
             <form id="enrollmentForm" class="enrollment-form">
                 <label>Student ID<input type="text" id="enrollStudentId" placeholder="STUDENT_001" required></label>
@@ -4077,6 +5290,12 @@ document.addEventListener(
 </div>
 
 <div class="proctify-modal" id="reportsModal"><div class="report-panel"><div class="report-head"><div><h2 id="reportsTitle">PROCTIFY Reports</h2><p id="reportsSubtitle">Completed examination monitoring sessions</p></div><button class="report-close" onclick="closeReports()" aria-label="Close">×</button></div><div id="reportsList" class="report-list"></div><div id="reportDetail" class="report-detail"></div></div></div>
+
+<div class="proctify-modal" id="evaluationsModal"><div class="report-panel"><div class="report-head"><div><h2>Submissions &amp; Evaluation</h2><p>Automatic scores, manual grading and answer review</p></div><div style="display:flex;gap:10px;align-items:center"><button class="teacher-btn secondary" onclick="openReports('Monitoring Reports')">MONITORING REPORTS</button><button class="report-close" onclick="closeEvaluations()" aria-label="Close">×</button></div></div><div id="evaluationsList"></div><div id="evaluationDetail" class="report-detail"></div></div></div>
+
+<div class="proctify-modal" id="alertsModal"><div class="report-panel"><div class="report-head"><div><h2>Integrity Alerts</h2><p>Terminated and high-risk sessions</p></div><button class="report-close" onclick="closeAlerts()" aria-label="Close">×</button></div><div id="alertsList"></div></div></div>
+
+<div class="proctify-modal" id="settingsModal"><div class="report-panel"><div class="report-head"><div><h2>System &amp; Data</h2><p>MySQL workbench overview and session controls</p></div><button class="report-close" onclick="closeSettings()" aria-label="Close">×</button></div><div id="settingsBody"></div></div></div>
 <script>
 
 /* =========================================

@@ -21,19 +21,95 @@ from datetime import datetime, timedelta
 app = Flask(__name__)
 app.secret_key = os.environ.get("PROCTIFY_SECRET_KEY", "proctify-dev-secret-key")
 
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
+
+    # Re-read templates on every render so HTML edits show up
+    # without restarting the server.
+    TEMPLATES_AUTO_RELOAD=True
+)
+
+# ============================================================
+# TEACHER AUTHENTICATION GUARD
+# ============================================================
+# Teacher pages and teacher-only APIs now require a real login.
+# Student pages, student APIs and the student-agent monitoring
+# endpoints stay exactly as they were.
+# ============================================================
+
+TEACHER_ONLY_PAGES = (
+    "/teacher",
+    "/exams",
+    "/exam/",
+    "/host-exam",
+    "/monitor/",
+    "/submission-report/"
+)
+
+TEACHER_ONLY_APIS = (
+    "/api/status",
+    "/api/students",
+    "/api/summary",
+    "/api/system",
+    "/api/enrolled-students",
+    "/api/submissions",
+    "/api/reports",
+    "/api/evidence/",
+    "/api/live/video/",
+    "/api/monitor/violations",
+    "/api/excel/"
+)
+
+
+def teacher_logged_in():
+
+    return bool(session.get("teacher_id"))
+
+
+@app.before_request
+def require_teacher_login():
+
+    path = request.path or ""
+
+    # The student-agent frame upload is a POST and must stay open.
+    if path == "/api/live/video/frame":
+        return None
+
+    if path.startswith(TEACHER_ONLY_PAGES):
+
+        if not teacher_logged_in():
+            return redirect("/")
+
+        return None
+
+    if path.startswith(TEACHER_ONLY_APIS):
+
+        if not teacher_logged_in():
+
+            return jsonify({
+                "success": False,
+                "error": "Teacher login required."
+            }), 401
+
+        return None
+
+    return None
+
 # ============================================================
 # MYSQL CONFIGURATION
 # ============================================================
 
 DB_CONFIG = {
 
-    "host": "localhost",
+    "host": os.environ.get("PROCTIFY_DB_HOST", "localhost"),
 
-    "user": "root",
+    "user": os.environ.get("PROCTIFY_DB_USER", "root"),
 
-    "password": "aasmaan@14",
+    "password": os.environ.get("PROCTIFY_DB_PASSWORD", "aasmaan@14"),
 
-    "database": "proctify_db"
+    "database": os.environ.get("PROCTIFY_DB_NAME", "proctify_db")
 
 }
 
@@ -63,6 +139,133 @@ def get_database_connection():
 
 
 # ============================================================
+# SCHEMA SELF-HEAL
+# ============================================================
+# The application owns its own schema so a fresh MySQL server
+# always works without a manual migration step.
+#
+#   1. `teachers` backs the real teacher login.
+#   2. exam_sessions.status must allow 'TERMINATED', otherwise the
+#      forced termination that fires at Trust Score 0 is rejected by
+#      MySQL strict mode (error 1265: data truncated).
+# ============================================================
+
+TEACHER_DEFAULT_USERNAME = os.environ.get(
+    "PROCTIFY_TEACHER_USER",
+    "teacher"
+)
+
+TEACHER_DEFAULT_PASSWORD = os.environ.get(
+    "PROCTIFY_TEACHER_PASSWORD",
+    "teacher123"
+)
+
+
+def ensure_mysql_schema():
+
+    connection = get_database_connection()
+
+    if connection is None:
+
+        print("SCHEMA: MySQL unavailable - schema not verified.")
+
+        return False
+
+    cursor = None
+
+    try:
+
+        cursor = connection.cursor()
+
+        # ----------------------------------------------------
+        # TEACHERS
+        # ----------------------------------------------------
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS teachers (
+                teacher_id   VARCHAR(50)  NOT NULL PRIMARY KEY,
+                teacher_name VARCHAR(100) NOT NULL,
+                username     VARCHAR(100) NOT NULL UNIQUE,
+                password     VARCHAR(255) NOT NULL,
+                created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+        cursor.execute("SELECT COUNT(*) FROM teachers")
+
+        if cursor.fetchone()[0] == 0:
+
+            cursor.execute("""
+                INSERT INTO teachers
+                    (teacher_id, teacher_name, username, password)
+                VALUES (%s, %s, %s, %s)
+            """, (
+                "TEACHER_001",
+                "Professor",
+                TEACHER_DEFAULT_USERNAME,
+                TEACHER_DEFAULT_PASSWORD
+            ))
+
+            print(
+                "SCHEMA: seeded teacher account ->",
+                TEACHER_DEFAULT_USERNAME,
+                "/",
+                TEACHER_DEFAULT_PASSWORD
+            )
+
+        # ----------------------------------------------------
+        # exam_sessions.status  ->  allow TERMINATED
+        # ----------------------------------------------------
+
+        cursor.execute("""
+            SELECT COLUMN_TYPE
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'exam_sessions'
+              AND COLUMN_NAME = 'status'
+        """)
+
+        row = cursor.fetchone()
+
+        if row:
+
+            column_type = str(row[0] or "").upper()
+
+            if "TERMINATED" not in column_type:
+
+                cursor.execute("""
+                    ALTER TABLE exam_sessions
+                    MODIFY COLUMN status
+                        ENUM('ONGOING','COMPLETED','TERMINATED')
+                        NOT NULL DEFAULT 'ONGOING'
+                """)
+
+                print("SCHEMA: exam_sessions.status now allows TERMINATED.")
+
+        connection.commit()
+
+        return True
+
+    except Exception as error:
+
+        print("SCHEMA ERROR:", error)
+
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+
+        return False
+
+    finally:
+
+        if cursor is not None:
+            cursor.close()
+
+        connection.close()
+
+
+# ============================================================
 # PATHS
 # ============================================================
 
@@ -70,18 +273,6 @@ BASE_DIR = os.path.dirname(
     os.path.dirname(
         os.path.abspath(__file__)
     )
-)
-
-LIVE_STATUS_FILE = os.path.join(
-    BASE_DIR,
-    "shared_data",
-    "live_status.json"
-)
-
-EXAMS_FILE = os.path.join(
-    BASE_DIR,
-    "shared_data",
-    "exams.json"
 )
 
 LIVE_MONITOR_FILE = os.path.join(
@@ -107,158 +298,28 @@ CENTRAL_LIVE_HEARTBEATS = {}
 CENTRAL_LIVE_TIMEOUT = 4.0
 CENTRAL_LIVE_LOCK = threading.Lock()
 
-
-# ============================================================
-# READ LIVE STATUS
-# ============================================================
-
-def load_live_data():
-
-    if not os.path.exists(
-        LIVE_STATUS_FILE
-    ):
-        return {
-            "system": "PROCTIFY",
-            "students": []
-        }
-
-    try:
-
-        with open(
-            LIVE_STATUS_FILE,
-            "r",
-            encoding="utf-8"
-        ) as file:
-
-            data = json.load(file)
-
-        if not isinstance(data, dict):
-
-            return {
-                "system": "PROCTIFY",
-                "students": []
-            }
-
-        return data
-
-    except Exception as error:
-
-        print(
-            "Live status read error:",
-            error
-        )
-
-        return {
-            "system": "PROCTIFY",
-            "students": []
-        }
+# Maximum persistent monitoring records per exam session.
+MAX_VIOLATIONS_PER_SESSION = 15
+MAX_EVIDENCE_PER_SESSION = 15
 
 
 # ============================================================
 # GET STUDENTS
 # ============================================================
-
-# ============================================================
-# GET STUDENTS
+# MySQL `live_students` is the only source of live monitoring
+# state. The legacy JSON fallback has been removed so a stale
+# file can never feed junk into the dashboard.
 # ============================================================
 
 def get_students():
 
-    # --------------------------------------------------------
-    # FIRST: TRY MYSQL
-    # --------------------------------------------------------
-
-    database_students = (
-        get_students_from_database()
-    )
-
-
-    if database_students:
-
-        cleaned_students = []
-
-
-        for student in database_students:
-
-            if isinstance(
-                student,
-                dict
-            ):
-
-                cleaned_students.append(
-                    student.copy()
-                )
-
-
-        return cleaned_students
-
-
-    # --------------------------------------------------------
-    # FALLBACK: LIVE STATUS JSON
-    #
-    # This keeps your existing monitoring system working
-    # while MySQL integration is being completed.
-    # --------------------------------------------------------
-
-    data = load_live_data()
-
-
-    students = data.get(
-        "students",
-        []
-    )
-
-
-    if not isinstance(
-        students,
-        list
-    ):
-
-        return []
-
-
     cleaned_students = []
 
+    for student in get_students_from_database():
 
-    for student in students:
+        if isinstance(student, dict):
 
-        if isinstance(
-            student,
-            dict
-        ):
-
-            cleaned_students.append(
-                student.copy()
-            )
-
-
-    return cleaned_students
-
-    data = load_live_data()
-
-    students = data.get(
-        "students",
-        []
-    )
-
-    if not isinstance(
-        students,
-        list
-    ):
-        return []
-
-    cleaned_students = []
-
-    for student in students:
-
-        if isinstance(
-            student,
-            dict
-        ):
-
-            cleaned_students.append(
-                student.copy()
-            )
+            cleaned_students.append(student.copy())
 
     return cleaned_students
 
@@ -453,6 +514,31 @@ def normalize_student(student):
     )
 
     return student
+
+# ============================================================
+# STRIP CORRECT ANSWERS FOR STUDENT-FACING RESPONSES
+# ============================================================
+# Students must never receive the correct_answer field. This
+# helper mutates the exam dict in place and is applied whenever
+# the request is served to a logged-in student.
+
+def strip_correct_answers_from_exam(exam):
+
+    questions = exam.get("questions")
+
+    if not isinstance(questions, list):
+        return exam
+
+    for question in questions:
+
+        if isinstance(question, dict):
+
+            question.pop("correct_answer", None)
+            question.pop("correct_answer_index", None)
+            question.pop("explanation", None)
+
+    return exam
+
 # ============================================================
 # GET LIVE STUDENTS FROM MYSQL
 # ============================================================
@@ -949,6 +1035,125 @@ def login():
         "login.html"
     )
 # ============================================================
+# TEACHER AUTHENTICATION - MYSQL
+# ============================================================
+
+@app.route(
+    "/api/teacher/login",
+    methods=["POST"]
+)
+def teacher_login():
+
+    connection = None
+    cursor = None
+
+    try:
+
+        data = request.get_json(silent=True) or {}
+
+        username = str(data.get("username", "")).strip()
+        password = str(data.get("password", "")).strip()
+
+        if not username or not password:
+
+            return jsonify({
+                "success": False,
+                "error": "Username and password are required."
+            }), 400
+
+        connection = get_database_connection()
+
+        if connection is None:
+
+            return jsonify({
+                "success": False,
+                "error": "Unable to connect to MySQL."
+            }), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT teacher_id, teacher_name, username, password
+            FROM teachers
+            WHERE username = %s
+            LIMIT 1
+        """, (username,))
+
+        teacher = cursor.fetchone()
+
+        if teacher is None or str(teacher.get("password")) != password:
+
+            return jsonify({
+                "success": False,
+                "error": "Invalid username or password."
+            }), 401
+
+        session.permanent = True
+
+        session["teacher_id"] = str(teacher["teacher_id"])
+        session["teacher_name"] = str(teacher["teacher_name"])
+
+        return jsonify({
+            "success": True,
+            "teacher": {
+                "teacher_id": teacher["teacher_id"],
+                "teacher_name": teacher["teacher_name"],
+                "username": teacher["username"]
+            },
+            "redirect": "/teacher"
+        })
+
+    except Exception as error:
+
+        print("Teacher login error:", error)
+
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 500
+
+    finally:
+
+        if cursor is not None:
+            cursor.close()
+
+        if connection is not None:
+            connection.close()
+
+
+@app.route(
+    "/api/teacher/logout",
+    methods=["POST", "GET"]
+)
+def teacher_logout():
+
+    session.pop("teacher_id", None)
+    session.pop("teacher_name", None)
+
+    return jsonify({"success": True})
+
+
+@app.route("/api/teacher/session")
+def teacher_session():
+
+    if not teacher_logged_in():
+
+        return jsonify({
+            "success": True,
+            "authenticated": False
+        })
+
+    return jsonify({
+        "success": True,
+        "authenticated": True,
+        "teacher": {
+            "teacher_id": session.get("teacher_id"),
+            "teacher_name": session.get("teacher_name")
+        }
+    })
+
+
+# ============================================================
 # TEACHER DASHBOARD
 # ============================================================
 
@@ -956,7 +1161,8 @@ def login():
 def teacher_dashboard():
 
     return render_template(
-        "index.html"
+        "index.html",
+        teacher_name=session.get("teacher_name") or "Professor"
     )
 # ============================================================
 # EXAMS PAGE
@@ -992,8 +1198,150 @@ def student_dashboard():
     return render_template(
         "student_dashboard.html",
         student_id=session.get("student_id"),
-        student_name=session.get("student_name", "")
+        student_name=session.get("student_name", ""),
+        face_verified=bool(session.get("face_verified"))
     )
+
+
+@app.route(
+    "/api/student/logout",
+    methods=["POST", "GET"]
+)
+def student_logout():
+
+    session.pop("student_id", None)
+    session.pop("student_name", None)
+    session.pop("student_username", None)
+    session.pop("face_verified", None)
+    session.pop("active_session_id", None)
+    session.pop("active_exam_id", None)
+
+    return jsonify({"success": True})
+
+
+@app.route(
+    "/api/student/verify-status"
+)
+def student_verify_status():
+
+    student_id = session.get("student_id")
+
+    if not student_id:
+
+        return jsonify({
+            "success": False,
+            "error": "Student login required."
+        }), 401
+
+    profile_path = os.path.join(
+        FACE_PROFILES_DIR,
+        f"{student_id}.jpg"
+    )
+
+    return jsonify({
+        "success": True,
+        "student_id": student_id,
+        "face_profile_exists": os.path.isfile(profile_path),
+        "face_verified": bool(session.get("face_verified"))
+    })
+
+
+@app.route(
+    "/api/student/enroll-face",
+    methods=["POST"]
+)
+def student_enroll_face():
+    """
+    First-time face enrolment.
+
+    A student with no stored profile captures one frame from their own
+    camera and it becomes their reference image. This is what makes the
+    verification step reachable on a fresh installation instead of
+    dead-ending on "No enrolled face profile found".
+    """
+
+    student_id = session.get("student_id")
+
+    if not student_id:
+
+        return jsonify({
+            "success": False,
+            "error": "Student login required."
+        }), 401
+
+    try:
+
+        data = request.get_json(silent=True) or {}
+
+        image_data = data.get("image")
+
+        if not image_data:
+
+            return jsonify({
+                "success": False,
+                "error": "No camera image received."
+            }), 400
+
+        if "," in str(image_data):
+
+            image_data = str(image_data).split(",", 1)[1]
+
+        image_array = np.frombuffer(
+            base64.b64decode(image_data),
+            dtype=np.uint8
+        )
+
+        image = cv2.imdecode(
+            image_array,
+            cv2.IMREAD_COLOR
+        )
+
+        if image is None:
+
+            return jsonify({
+                "success": False,
+                "error": "Invalid camera image."
+            }), 400
+
+        descriptor = create_face_descriptor(image)
+
+        if descriptor is None:
+
+            return jsonify({
+                "success": False,
+                "error": "No face detected. Look at the camera and try again."
+            }), 400
+
+        os.makedirs(FACE_PROFILES_DIR, exist_ok=True)
+
+        profile_path = os.path.join(
+            FACE_PROFILES_DIR,
+            f"{student_id}.jpg"
+        )
+
+        if not cv2.imwrite(profile_path, image):
+
+            return jsonify({
+                "success": False,
+                "error": "Unable to save the face profile."
+            }), 500
+
+        session["face_verified"] = True
+
+        return jsonify({
+            "success": True,
+            "enrolled": True,
+            "student_id": student_id
+        })
+
+    except Exception as error:
+
+        print("Face enrolment error:", error)
+
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 500
 
 
 # ============================================================
@@ -1006,7 +1354,10 @@ def student_verify():
     if not session.get("student_id"):
         return redirect("/")
 
-    return render_template("student_verify.html")
+    return render_template(
+        "student_verify.html",
+        student_id=session.get("student_id")
+    )
 
 
 # ============================================================
@@ -1226,6 +1577,21 @@ def student_precheck(exam_id):
         if exam is None:
             return "Exam not found", 404
 
+        # Only students who were assigned this exam may enter it.
+        cursor.execute(
+            """
+            SELECT assignment_id
+            FROM exam_assignments
+            WHERE exam_id = %s
+              AND student_id = %s
+            LIMIT 1
+            """,
+            (exam_id, str(student_id))
+        )
+
+        if cursor.fetchone() is None:
+            return "This exam is not assigned to your account.", 403
+
         # Do not allow a student to start an exam that was already submitted.
         cursor.execute(
             """
@@ -1414,6 +1780,20 @@ def student_exam(exam_id):
 
             cursor.execute(
                 """
+                SELECT assignment_id
+                FROM exam_assignments
+                WHERE exam_id = %s
+                  AND student_id = %s
+                LIMIT 1
+                """,
+                (exam_id, str(student_id))
+            )
+
+            if cursor.fetchone() is None:
+                return "This exam is not assigned to your account.", 403
+
+            cursor.execute(
+                """
                 SELECT submission_id
                 FROM exam_submissions
                 WHERE exam_id = %s
@@ -1569,6 +1949,13 @@ def api_students():
     "/api/student/<student_id>"
 )
 def api_student(student_id):
+
+    if not teacher_logged_in():
+
+        return jsonify({
+            "success": False,
+            "error": "Teacher login required."
+        }), 401
 
     students = get_students()
 
@@ -1781,11 +2168,31 @@ def verify_student_face():
             }), 400
 
 
+        # ----------------------------------------------------
+        # STUDENT ID FROM THE FLASK SESSION
+        # ----------------------------------------------------
+        # The student identity is the server-side authenticated
+        # session. A browser-supplied student_id is never trusted.
+
+        student_id = session.get(
+            "student_id"
+        )
+
+        if not student_id:
+
+            return jsonify({
+
+                "success": False,
+
+                "verified": False,
+
+                "error":
+                    "Student login required."
+
+            }), 401
+
         student_id = str(
-            data.get(
-                "student_id",
-                "STUDENT_001"
-            )
+            student_id
         ).strip()
 
 
@@ -1819,19 +2226,26 @@ def verify_student_face():
 
 
         if not os.path.exists(
+
             profile_file
         ):
 
+            # A student with no stored profile can enrol one from this
+            # same page instead of hitting a dead end.
             return jsonify({
 
                 "success": False,
 
                 "verified": False,
 
-                "error":
-                    "No enrolled face profile found."
+                "profile_missing": True,
 
-            }), 404
+                "can_enroll": True,
+
+                "error":
+                    "No face profile has been enrolled for this account yet."
+
+            }), 200
 
 
         # ----------------------------------------------------
@@ -1967,6 +2381,9 @@ def verify_student_face():
             distance <= threshold
         )
 
+        if verified:
+
+            session["face_verified"] = True
 
         return jsonify({
 
@@ -2023,20 +2440,32 @@ def api_summary():
     high_risk = 0
 
     total_score = 0
+    scored_count = 0
 
     for student in students:
 
         score = student.get(
             "trust_score",
-            100
+            None
         )
 
-        total_score += score
+        # A missing or non-numeric score is never fabricated as 100.
+        # A genuine score of 0 is preserved as 0.
+        try:
+            score = int(score)
+        except (TypeError, ValueError):
+            score = None
 
         risk = student.get(
-            "risk_level",
-            calculate_risk(score)
+            "risk_level"
         )
+
+        if risk is None:
+            risk = calculate_risk(
+                score if score is not None else 100
+            )
+
+        risk = str(risk or "").upper()
 
         if risk == "LOW":
 
@@ -2050,21 +2479,26 @@ def api_summary():
 
             high_risk += 1
 
+        if score is not None:
+
+            total_score += score
+            scored_count += 1
+
 
     # --------------------------------------------------------
     # Average score
     # --------------------------------------------------------
 
-    if total_students > 0:
+    if scored_count > 0:
 
         average_score = round(
             total_score /
-            total_students
+            scored_count
         )
 
     else:
 
-        average_score = 100
+        average_score = 0
 
 
     return jsonify({
@@ -2095,42 +2529,92 @@ def api_summary():
 
 @app.route("/api/system")
 def api_system():
+    """
+    System information for the teacher Settings panel.
+    Everything is read from MySQL - no JSON files are involved.
+    """
 
-    data = load_live_data()
+    connection = None
+    cursor = None
 
-    students = get_students()
+    stats = {
+        "database": DB_CONFIG["database"],
+        "sessions": 0,
+        "enrolled_students": 0,
+        "exams": 0,
+        "submissions": 0,
+        "violations": 0,
+        "evidence": 0,
+        "live_students": 0
+    }
 
-    online_count = 0
+    try:
 
-    for student in students:
+        connection = get_database_connection()
 
-        if student.get(
-            "status"
-        ) == "ONLINE":
+        if connection is not None:
 
-            online_count += 1
+            cursor = connection.cursor()
 
+            for key, table in (
+                ("sessions", "exam_sessions"),
+                ("enrolled_students", "students"),
+                ("exams", "exams"),
+                ("submissions", "exam_submissions"),
+                ("violations", "violations"),
+                ("evidence", "evidence"),
+                ("live_students", "live_students")
+            ):
 
-    return jsonify({
+                cursor.execute(f"SELECT COUNT(*) FROM {table}")
 
-        "success": True,
+                stats[key] = int(cursor.fetchone()[0])
 
-        "system":
-            "PROCTIFY",
+        students = get_students()
 
-        "students":
-            len(students),
+        online_count = sum(
+            1
+            for student in students
+            if str(student.get("status") or "").upper() == "ONLINE"
+        )
 
-        "online_students":
-            online_count,
+        return jsonify({
 
-        "last_update":
-            data.get(
-                "last_update",
-                ""
-            )
+            **stats,
 
-    })
+            "success": True,
+
+            "system": "PROCTIFY",
+
+            "students": len(students),
+
+            "online_students": online_count,
+
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        })
+
+    except Exception as error:
+
+        print("System info error:", error)
+
+        return jsonify({
+
+            **stats,
+
+            "success": False,
+
+            "error": str(error)
+
+        }), 500
+
+    finally:
+
+        if cursor is not None:
+            cursor.close()
+
+        if connection is not None:
+            connection.close()
 
 # ============================================================
 # HOST EXAM
@@ -2843,24 +3327,59 @@ def get_exams():
 
         else:
 
-            select_query = """
-                SELECT
-                    exam_id,
-                    exam_name,
-                    subject,
-                    duration,
-                    questions,
-                    question_count,
-                    scheduled_start,
-                    scheduled_end,
-                    status,
-                    created_at
-                FROM exams
-                WHERE status != 'EXPIRED'
-                ORDER BY created_at DESC
-            """
+            # Teachers see EVERY exam, including EXPIRED and COMPLETED
+            # ones, so they can review and delete old examinations.
+            # Everyone else keeps the previous non-expired view.
+            if teacher_logged_in():
 
-            cursor.execute(select_query)
+                select_query = """
+                    SELECT
+                        e.exam_id,
+                        e.exam_name,
+                        e.subject,
+                        e.duration,
+                        e.questions,
+                        e.question_count,
+                        e.scheduled_start,
+                        e.scheduled_end,
+                        e.status,
+                        e.created_at,
+                        (
+                            SELECT COUNT(*)
+                            FROM exam_assignments a
+                            WHERE a.exam_id = e.exam_id
+                        ) AS assigned_count,
+                        (
+                            SELECT COUNT(*)
+                            FROM exam_submissions s
+                            WHERE s.exam_id = e.exam_id
+                        ) AS submission_count
+                    FROM exams e
+                    ORDER BY e.created_at DESC
+                """
+
+                cursor.execute(select_query)
+
+            else:
+
+                select_query = """
+                    SELECT
+                        exam_id,
+                        exam_name,
+                        subject,
+                        duration,
+                        questions,
+                        question_count,
+                        scheduled_start,
+                        scheduled_end,
+                        status,
+                        created_at
+                    FROM exams
+                    WHERE status != 'EXPIRED'
+                    ORDER BY created_at DESC
+                """
+
+                cursor.execute(select_query)
 
 
         exams = cursor.fetchall()
@@ -2924,6 +3443,11 @@ def get_exams():
                 ):
 
                     exam[field] = value.isoformat()
+
+
+            # A logged-in student must never receive correct_answer.
+            if session.get("student_id"):
+                strip_correct_answers_from_exam(exam)
 
 
         return jsonify({
@@ -3183,6 +3707,11 @@ def get_single_exam(exam_id):
                 exam[field] = value.isoformat()
 
 
+        # A logged-in student must never receive correct_answer.
+        if session.get("student_id"):
+            strip_correct_answers_from_exam(exam)
+
+
         return jsonify({
 
             "success": True,
@@ -3230,312 +3759,259 @@ def get_single_exam(exam_id):
 )
 def report_tab_switch(exam_id):
 
+    connection = None
+    cursor = None
+
     try:
 
-        data = request.get_json(
-            silent=True
-        ) or {}
-
-        student_id = str(
-            data.get(
-                "student_id",
-                "STUDENT_001"
-            )
-        ).strip()
-
-        if not student_id:
-            student_id = "STUDENT_001"
-
-
         # ----------------------------------------------------
-        # VERIFY EXAM EXISTS
+        # STUDENT ID FROM THE FLASK SESSION
         # ----------------------------------------------------
+        # The student identity is the server-side session, never a
+        # browser-supplied value. Reject the request if the student
+        # is not logged in.
 
-        exam_file = os.path.join(
-            EXAMS_DIR,
-            exam_id + ".json"
+        student_id = session.get(
+            "student_id"
         )
 
-        if not os.path.exists(
-            exam_file
-        ):
+        if not student_id:
+
+            return jsonify({
+                "success": False,
+                "error": "Student login required."
+            }), 401
+
+        student_id = str(student_id).strip()
+
+        connection = get_database_connection()
+
+        if connection is None:
+
+            return jsonify({
+                "success": False,
+                "error": "Unable to connect to MySQL."
+            }), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+
+        # ----------------------------------------------------
+        # VERIFY EXAM EXISTS AND IS ACTIVE (MYSQL)
+        # ----------------------------------------------------
+
+        cursor.execute(
+            """
+            SELECT exam_id, exam_name, status
+            FROM exams
+            WHERE exam_id = %s
+            LIMIT 1
+            """,
+            (exam_id,)
+        )
+
+        exam = cursor.fetchone()
+
+        if exam is None:
 
             return jsonify({
                 "success": False,
                 "error": "Exam not found"
             }), 404
 
-
-        # ----------------------------------------------------
-        # VERIFY EXAM IS ACTIVE
-        # ----------------------------------------------------
-
-        with open(
-            exam_file,
-            "r",
-            encoding="utf-8"
-        ) as file:
-
-            exam = json.load(file)
-
-
         if str(
-            exam.get(
-                "status",
-                ""
-            )
+            exam.get("status", "")
         ).upper() != "ACTIVE":
 
             return jsonify({
                 "success": False,
-                "error":
-                    "Exam is not active"
+                "error": "Exam is not active"
             }), 400
 
 
         # ----------------------------------------------------
-        # READ LIVE STATUS
+        # VERIFY ASSIGNMENT
         # ----------------------------------------------------
 
-        live_data = load_live_data()
-
-
-        students = live_data.get(
-            "students",
-            []
+        cursor.execute(
+            """
+            SELECT assignment_id
+            FROM exam_assignments
+            WHERE exam_id = %s
+              AND student_id = %s
+            LIMIT 1
+            """,
+            (exam_id, student_id)
         )
 
-
-        if not isinstance(
-            students,
-            list
-        ):
-
-            students = []
-
-
-        student_found = False
-
-        updated_students = []
-
-
-        # ----------------------------------------------------
-        # UPDATE STUDENT
-        # ----------------------------------------------------
-
-        for student in students:
-
-            if not isinstance(
-                student,
-                dict
-            ):
-                continue
-
-
-            if str(
-                student.get(
-                    "student_id",
-                    ""
-                )
-            ) == student_id:
-
-                student_found = True
-
-
-                # --------------------------------------------
-                # TAB SWITCH COUNT
-                # --------------------------------------------
-
-                tab_switch_count = int(
-                    student.get(
-                        "tab_switch_count",
-                        0
-                    )
-                ) + 1
-
-
-                student[
-                    "tab_switch_count"
-                ] = tab_switch_count
-
-
-                # --------------------------------------------
-                # TAB STATUS
-                # --------------------------------------------
-
-                student[
-                    "tab_status"
-                ] = "VIOLATION"
-
-
-                # --------------------------------------------
-                # LAST TAB EVENT
-                # --------------------------------------------
-
-                current_time =datetime.now()
-
-
-                student[
-                    "last_tab_switch"
-                ] = (
-                    current_time.isoformat()
-                )
-
-
-                student[
-                    "tab_violation_until"
-                ] = (
-                    datetime.now().timestamp()
-                    + 10
-                )
-
-
-                student[
-                    "last_event"
-                ] = "TAB SWITCH"
-
-
-                student[
-                    "last_event_time"
-                ] = (
-                    current_time.strftime(
-                        "%H:%M:%S"
-                    )
-                )
-
-
-                # --------------------------------------------
-                # TRUST SCORE PENALTY
-                # --------------------------------------------
-
-                try:
-
-                    current_trust = int(
-                        student.get(
-                            "trust_score",
-                            100
-                        )
-                    )
-
-                except (
-                    ValueError,
-                    TypeError
-                ):
-
-                    current_trust = 100
-
-
-                student[
-                    "trust_score"
-                ] = max(
-                    0,
-                    current_trust - 5
-                )
-
-
-                # --------------------------------------------
-                # RISK LEVEL
-                # --------------------------------------------
-
-                trust_score = student[
-                    "trust_score"
-                ]
-
-
-                if trust_score >= 80:
-
-                    student[
-                        "risk_level"
-                    ] = "LOW"
-
-                elif trust_score >= 50:
-
-                    student[
-                        "risk_level"
-                    ] = "MEDIUM"
-
-                else:
-
-                    student[
-                        "risk_level"
-                    ] = "HIGH"
-
-
-            updated_students.append(
-                student
-            )
-
-
-        # ----------------------------------------------------
-        # STUDENT NOT FOUND
-        # ----------------------------------------------------
-
-        if not student_found:
+        if cursor.fetchone() is None:
 
             return jsonify({
                 "success": False,
-                "error":
-                    "Student monitoring session not found"
+                "error": "This exam is not assigned to the logged-in student."
+            }), 403
+
+
+        # ----------------------------------------------------
+        # FIND ACTIVE MONITORING SESSION
+        # ----------------------------------------------------
+
+        session_id = session.get(
+            "active_session_id"
+        )
+
+        cursor.execute(
+            """
+            SELECT session_id, trust_score, risk_level, status
+            FROM live_students
+            WHERE student_id = %s
+            LIMIT 1
+            """,
+            (student_id,)
+        )
+
+        live_row = cursor.fetchone()
+
+        if live_row is None or str(
+            (live_row.get("status") or "").upper()
+        ) != "ONLINE":
+
+            return jsonify({
+                "success": False,
+                "error": "Student monitoring session not found"
             }), 404
 
+        if not session_id:
+            session_id = live_row.get("session_id")
 
-        # ----------------------------------------------------
-        # FINAL LIVE STATUS
-        # ----------------------------------------------------
+        session_id = str(session_id or "")
 
-        live_data[
-            "system"
-        ] = "PROCTIFY"
-
-
-        live_data[
-            "last_update"
-        ] = datetime.now().strftime(
-            "%H:%M:%S"
-        )
-
-
-        live_data[
-            "students"
-        ] = updated_students
-
-
-        # ----------------------------------------------------
-        # ATOMIC WRITE
-        # ----------------------------------------------------
-
-        temp_file = (
-            LIVE_STATUS_FILE +
-            ".tab.tmp"
-        )
-
-
-        with open(
-            temp_file,
-            "w",
-            encoding="utf-8"
-        ) as file:
-
-            json.dump(
-                live_data,
-                file,
-                indent=4
+        if not session_id:
+            session_id = str(
+                live_row.get("session_id") or ""
             )
 
 
-        os.replace(
-            temp_file,
-            LIVE_STATUS_FILE
+        # ----------------------------------------------------
+        # TAB SWITCH PENALTY
+        # ----------------------------------------------------
+        # Consistent with monitoring_engine.PENALTIES["TAB_SWITCH"] = 10.
+
+        penalty = 10
+
+        try:
+            current_trust = int(
+                live_row.get("trust_score", 100)
+            )
+        except (ValueError, TypeError):
+            current_trust = 100
+
+        new_trust = max(0, current_trust - penalty)
+
+        if new_trust >= 80:
+            new_risk = "LOW"
+        elif new_trust >= 50:
+            new_risk = "MEDIUM"
+        else:
+            new_risk = "HIGH"
+
+
+        # ----------------------------------------------------
+        # RECORD VIOLATION (MYSQL)
+        # ----------------------------------------------------
+
+        cursor.execute(
+            """
+            INSERT INTO violations
+            (
+                session_id,
+                violation_type,
+                severity,
+                penalty,
+                description
+            )
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (
+                session_id,
+                "TAB_SWITCH",
+                "MEDIUM",
+                penalty,
+                "Student switched away from the examination tab"
+            )
         )
 
+        cursor.execute(
+            """
+            INSERT INTO trust_score_history
+            (
+                session_id,
+                old_score,
+                new_score,
+                reason
+            )
+            VALUES (%s, %s, %s, %s)
+            """,
+            (
+                session_id,
+                current_trust,
+                new_trust,
+                "TAB_SWITCH"
+            )
+        )
+
+
+        # ----------------------------------------------------
+        # UPDATE LIVE STUDENT ROW (MYSQL)
+        # ----------------------------------------------------
+
+        cursor.execute(
+            """
+            UPDATE live_students
+            SET
+                trust_score = %s,
+                risk_level = %s,
+                last_event = 'TAB SWITCH',
+                last_update = NOW(),
+                tab_available = 0
+            WHERE student_id = %s
+              AND session_id = %s
+            """,
+            (new_trust, new_risk, student_id, session_id)
+        )
+
+
+        # ----------------------------------------------------
+        # CURRENT TAB SWITCH COUNT FOR THIS SESSION
+        # ----------------------------------------------------
+
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM violations
+            WHERE session_id = %s
+              AND violation_type = 'TAB_SWITCH'
+            """,
+            (session_id,)
+        )
+
+        tab_switch_count = int(
+            (cursor.fetchone() or {}).get("c", 0) or 0
+        )
+
+        connection.commit()
 
         print(
             "TAB SWITCH RECORDED:",
             student_id,
             "Exam:",
             exam_id,
+            "Session:",
+            session_id,
             "Count:",
-            tab_switch_count
+            tab_switch_count,
+            "Trust:",
+            new_trust
         )
 
 
@@ -3552,6 +4028,15 @@ def report_tab_switch(exam_id):
             "exam_id":
                 exam_id,
 
+            "session_id":
+                session_id,
+
+            "trust_score":
+                new_trust,
+
+            "risk_level":
+                new_risk,
+
             "tab_switch_count":
                 tab_switch_count
 
@@ -3559,6 +4044,12 @@ def report_tab_switch(exam_id):
 
 
     except Exception as error:
+
+        if connection is not None:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
 
         print(
             "Tab switch error:",
@@ -3574,6 +4065,14 @@ def report_tab_switch(exam_id):
                 str(error)
 
         }), 500
+
+    finally:
+
+        if cursor is not None:
+            cursor.close()
+
+        if connection is not None:
+            connection.close()
 # ============================================================
 # COMPLETE EXAM
 # ============================================================
@@ -3584,49 +4083,66 @@ def report_tab_switch(exam_id):
 )
 def complete_exam(exam_id):
 
+    if not teacher_logged_in():
+
+        return jsonify({
+            "success": False,
+            "error": "Teacher login required."
+        }), 401
+
+
+    connection = None
+    cursor = None
+
     try:
 
-        exam_file = os.path.join(
-            EXAMS_DIR,
-            exam_id + ".json"
+        connection = get_database_connection()
+
+        if connection is None:
+
+            return jsonify({
+                "success": False,
+                "error": "Unable to connect to MySQL"
+            }), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute(
+            """
+            SELECT exam_id, exam_name, status
+            FROM exams
+            WHERE exam_id = %s
+            LIMIT 1
+            """,
+            (exam_id,)
         )
 
-        if not os.path.exists(exam_file):
+        exam = cursor.fetchone()
+
+        if exam is None:
 
             return jsonify({
                 "success": False,
                 "error": "Exam not found"
             }), 404
 
+        if str(exam.get("status", "")).upper() == "COMPLETED":
 
-        with open(
-            exam_file,
-            "r",
-            encoding="utf-8"
-        ) as file:
+            return jsonify({
+                "success": False,
+                "error": "Exam is already completed"
+            }), 409
 
-            exam = json.load(file)
-
-
-        exam["status"] = "COMPLETED"
-
-        exam["completed_at"] = (
-            datetime.now().isoformat()
+        cursor.execute(
+            """
+            UPDATE exams
+            SET status = 'COMPLETED'
+            WHERE exam_id = %s
+            """,
+            (exam_id,)
         )
 
-
-        with open(
-            exam_file,
-            "w",
-            encoding="utf-8"
-        ) as file:
-
-            json.dump(
-                exam,
-                file,
-                indent=4
-            )
-
+        connection.commit()
 
         print()
         print(
@@ -3644,10 +4160,7 @@ def complete_exam(exam_id):
         )
         print(
             "Exam:",
-            exam.get(
-                "exam_name",
-                "Unknown"
-            )
+            exam.get("exam_name", "Unknown")
         )
         print(
             "========================================"
@@ -3670,19 +4183,29 @@ def complete_exam(exam_id):
 
     except Exception as error:
 
+        if connection is not None:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+
         print(
             "Exam completion error:",
             error
         )
 
         return jsonify({
-
             "success": False,
-
-            "error":
-                str(error)
-
+            "error": str(error)
         }), 500
+
+    finally:
+
+        if cursor is not None:
+            cursor.close()
+
+        if connection is not None:
+            connection.close()
 # ============================================================
 # SUBMISSIONS API
 # ============================================================
@@ -3924,6 +4447,95 @@ def get_submission_report_data(submission_id):
         if submission is None:
             return None
 
+        # ----------------------------------------------------
+        # EXAM QUESTIONS (teacher review of every answer)
+        # ----------------------------------------------------
+        # This endpoint is teacher-only, so the correct answers are
+        # returned here to power the manual evaluation screen.
+        # ----------------------------------------------------
+
+        questions = []
+
+        cursor.execute("""
+            SELECT questions
+            FROM exams
+            WHERE exam_id = %s
+            LIMIT 1
+        """, (str(submission.get("exam_id")),))
+
+        question_row = cursor.fetchone()
+
+        if question_row:
+
+            raw_questions = question_row.get("questions")
+
+            if isinstance(raw_questions, str):
+
+                try:
+                    raw_questions = json.loads(raw_questions)
+                except Exception:
+                    raw_questions = []
+
+            if isinstance(raw_questions, list):
+                questions = raw_questions
+
+        answers = submission.get("answers")
+
+        if isinstance(answers, str):
+
+            try:
+                answers = json.loads(answers)
+            except Exception:
+                answers = {}
+
+        if not isinstance(answers, dict):
+            answers = {}
+
+        # Build a fully reviewable answer sheet.
+        review = []
+
+        for index, question in enumerate(questions):
+
+            if not isinstance(question, dict):
+                continue
+
+            key = str(index)
+
+            given = answers.get(key)
+
+            if given is None:
+                given = answers.get(index)
+
+            correct = question.get("correct_answer")
+
+            given_text = str(given).strip() if given is not None else ""
+            correct_text = str(correct).strip() if correct is not None else ""
+
+            options = question.get("options") if isinstance(
+                question.get("options"), dict
+            ) else {}
+
+            review.append({
+                "index": index,
+                "question": question.get("question"),
+                "options": options,
+                "student_answer": given_text or None,
+                "student_answer_text": options.get(given_text) if given_text else None,
+                "correct_answer": correct_text or None,
+                "correct_answer_text": options.get(correct_text) if correct_text else None,
+                "is_correct": bool(
+                    given_text and correct_text and
+                    given_text.upper() == correct_text.upper()
+                )
+            })
+
+        submission["answers"] = answers
+        submission["questions"] = questions
+        submission["answer_review"] = review
+        submission["answered_count"] = sum(
+            1 for item in review if item["student_answer"]
+        )
+
         session_id = submission.get("session_id")
         violations = []
         evidence = []
@@ -4066,11 +4678,48 @@ LIVE_VIDEO_FRAMES = {}
 LIVE_VIDEO_LOCK = threading.Lock()
 LIVE_VIDEO_MAX_AGE = 5.0
 
+# How long the MJPEG stream keeps waiting for a fresh frame before it
+# closes itself. This is what makes the teacher's live feed actually
+# stop when a student disconnects or is terminated.
+LIVE_VIDEO_IDLE_TIMEOUT = float(
+    os.environ.get("PROCTIFY_VIDEO_IDLE_TIMEOUT", "8")
+)
+
 
 def _monitor_json_datetime(value):
     if isinstance(value, datetime):
         return value.isoformat()
     return value
+
+
+def _release_mysql_lock(cursor, lock_name):
+    """
+    Release a MySQL named lock.
+
+    RELEASE_LOCK returns a result set, so it must be fetched. Leaving it
+    unread made the next statement fail with "Unread result found" and
+    broke the whole request (evidence upload and violation logging).
+    """
+
+    if cursor is None or not lock_name:
+        return
+
+    try:
+        cursor.execute("SELECT RELEASE_LOCK(%s)", (lock_name,))
+        cursor.fetchone()
+    except Exception as error:
+        print("MySQL lock release error:", error)
+
+
+def _safe_close_cursor(cursor):
+
+    if cursor is None:
+        return
+
+    try:
+        cursor.close()
+    except Exception as error:
+        print("Cursor close warning:", error)
 
 
 @app.route("/api/monitor/live-status", methods=["POST"])
@@ -4092,7 +4741,7 @@ def monitor_live_status():
                 "error": "student_id and session_id are required."
             }), 400
 
-        if status not in {"ONLINE", "OFFLINE"}:
+        if status not in {"ONLINE", "OFFLINE", "TERMINATED"}:
             return jsonify({
                 "success": False,
                 "error": "Invalid monitoring status."
@@ -4246,25 +4895,50 @@ def monitor_violation():
 
         cursor = connection.cursor()
 
-        cursor.execute("""
-            INSERT INTO violations
-            (
-                session_id,
-                violation_type,
-                severity,
-                penalty,
-                description
-            )
-            VALUES (%s, %s, %s, %s, %s)
-        """, (
-            session_id,
-            violation_type,
-            severity,
-            penalty,
-            description
-        ))
+        # Keep persistent violation history capped at 15 records per session.
+        # A MySQL named lock prevents two simultaneous monitor requests from
+        # both seeing 14 records and inserting a 15th/16th record together.
+        lock_name = f"proctify_violation_{session_id}"[:64]
+        cursor.execute("SELECT GET_LOCK(%s, 5)", (lock_name,))
+        lock_acquired = bool(cursor.fetchone()[0])
 
-        violation_id = cursor.lastrowid
+        if not lock_acquired:
+            return jsonify({
+                "success": False,
+                "error": "Unable to acquire violation storage lock."
+            }), 503
+
+        try:
+            cursor.execute("""
+                SELECT COUNT(*)
+                FROM violations
+                WHERE session_id = %s
+            """, (session_id,))
+            stored_violation_count = int(cursor.fetchone()[0] or 0)
+
+            if stored_violation_count < MAX_VIOLATIONS_PER_SESSION:
+                cursor.execute("""
+                    INSERT INTO violations
+                    (
+                        session_id,
+                        violation_type,
+                        severity,
+                        penalty,
+                        description
+                    )
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (
+                    session_id,
+                    violation_type,
+                    severity,
+                    penalty,
+                    description
+                ))
+                violation_id = cursor.lastrowid
+            else:
+                violation_id = None
+        finally:
+            _release_mysql_lock(cursor, lock_name)
 
         cursor.execute("""
             INSERT INTO trust_score_history
@@ -4306,7 +4980,13 @@ def monitor_violation():
 
         return jsonify({
             "success": True,
-            "violation_id": int(violation_id)
+            "stored": violation_id is not None,
+            "limit_reached": violation_id is None,
+            "violation_id": (
+                int(violation_id)
+                if violation_id is not None
+                else None
+            )
         })
 
     except Exception as error:
@@ -4322,8 +5002,7 @@ def monitor_violation():
         }), 500
 
     finally:
-        if cursor is not None:
-            cursor.close()
+        _safe_close_cursor(cursor)
         if connection is not None:
             connection.close()
 
@@ -4332,6 +5011,8 @@ def monitor_violation():
 def monitor_evidence():
     connection = None
     cursor = None
+    evidence_lock_name = None
+    evidence_lock_held = False
 
     try:
         session_id = str(request.form.get("session_id", "")).strip()
@@ -4353,6 +5034,47 @@ def monitor_evidence():
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         filename = f"{safe_type}_{student_id}_{timestamp}.jpg"
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({
+                "success": False,
+                "error": "Unable to connect to MySQL."
+            }), 500
+
+        cursor = connection.cursor()
+
+        # Never create a physical evidence file after the 15-image limit.
+        # Hold a MySQL named lock through the count + insert so concurrent
+        # evidence uploads cannot push the session above 15 records.
+        lock_name = f"proctify_evidence_{session_id}"[:64]
+        evidence_lock_name = lock_name
+        cursor.execute("SELECT GET_LOCK(%s, 5)", (lock_name,))
+        lock_acquired = bool(cursor.fetchone()[0])
+        evidence_lock_held = lock_acquired
+
+        if not lock_acquired:
+            return jsonify({
+                "success": False,
+                "error": "Unable to acquire evidence storage lock."
+            }), 503
+
+        cursor.execute("""
+            SELECT COUNT(*)
+            FROM evidence
+            WHERE session_id = %s
+        """, (session_id,))
+        stored_evidence_count = int(cursor.fetchone()[0] or 0)
+
+        if stored_evidence_count >= MAX_EVIDENCE_PER_SESSION:
+            _release_mysql_lock(cursor, lock_name)
+            evidence_lock_held = False
+            return jsonify({
+                "success": True,
+                "stored": False,
+                "limit_reached": True,
+                "message": "Maximum 15 evidence images reached."
+            })
+
         evidence_dir = os.path.join(BASE_DIR, "reports", "evidence")
         os.makedirs(evidence_dir, exist_ok=True)
         file_path = os.path.join(evidence_dir, filename)
@@ -4364,15 +5086,6 @@ def monitor_evidence():
                 "success": False,
                 "error": "Evidence image could not be saved."
             }), 500
-
-        connection = get_database_connection()
-        if connection is None:
-            return jsonify({
-                "success": False,
-                "error": "Unable to connect to MySQL."
-            }), 500
-
-        cursor = connection.cursor()
 
         # Use the exact violation created by the monitoring engine when
         # available. Keep the old same-session/type lookup as a compatibility
@@ -4424,6 +5137,9 @@ def monitor_evidence():
         evidence_id = cursor.lastrowid
         connection.commit()
 
+        _release_mysql_lock(cursor, lock_name)
+        evidence_lock_held = False
+
         return jsonify({
             "success": True,
             "evidence_id": int(evidence_id),
@@ -4445,7 +5161,9 @@ def monitor_evidence():
 
     finally:
         if cursor is not None:
-            cursor.close()
+            if evidence_lock_held and evidence_lock_name:
+                _release_mysql_lock(cursor, evidence_lock_name)
+            _safe_close_cursor(cursor)
         if connection is not None:
             connection.close()
 
@@ -4526,6 +5244,339 @@ def monitor_evidence_list():
             connection.close()
 
 
+def write_session_report(session_id, student_id, exam_name, extra=None):
+    """
+    Build the JSON session report for one monitoring session.
+
+    Shared by /api/monitor/report (normal completion) and
+    /api/monitor/terminate (Trust Score hit 0), so a terminated
+    student ALWAYS has a report the teacher can open.
+    """
+
+    extra = extra or {}
+
+    connection = get_database_connection()
+
+    if connection is None:
+
+        return None
+
+    cursor = None
+
+    try:
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT final_trust_score, final_risk_level
+            FROM exam_sessions
+            WHERE session_id = %s
+            LIMIT 1
+        """, (session_id,))
+
+        session_row = cursor.fetchone() or {}
+
+        cursor.execute("""
+            SELECT id, violation_type, severity, penalty, description, timestamp
+            FROM violations
+            WHERE session_id = %s
+            ORDER BY timestamp ASC
+        """, (session_id,))
+
+        violations = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT id, violation_id, file_path, timestamp
+            FROM evidence
+            WHERE session_id = %s
+            ORDER BY timestamp ASC
+        """, (session_id,))
+
+        evidence = cursor.fetchall()
+
+        for collection in (violations, evidence):
+
+            for row in collection:
+
+                for key, value in list(row.items()):
+
+                    row[key] = _monitor_json_datetime(value)
+
+        report_dir = os.path.join(BASE_DIR, "reports")
+        os.makedirs(report_dir, exist_ok=True)
+
+        safe_session_id = str(session_id).replace(" ", "_")
+
+        report_path = os.path.join(
+            report_dir,
+            f"session_report_{safe_session_id}.json"
+        )
+
+        report_data = {
+            "system": "PROCTIFY",
+            "session_id": session_id,
+            "student_id": student_id,
+            "exam_name": exam_name,
+            "start_time": extra.get("start_time"),
+            "end_time": extra.get("end_time"),
+            "duration_seconds": extra.get("duration_seconds", 0),
+            "cheating_score": extra.get("cheating_score", 0),
+            "terminated": bool(extra.get("terminated")),
+            "termination_reason": extra.get("termination_reason"),
+            "final_trust_score": session_row.get(
+                "final_trust_score",
+                extra.get("final_trust_score", 100)
+            ),
+            "final_risk_level": session_row.get(
+                "final_risk_level",
+                extra.get("final_risk_level", "LOW")
+            ),
+            "total_violations": len(violations),
+            "total_evidence": len(evidence),
+            "violations": violations,
+            "evidence": evidence
+        }
+
+        with open(report_path, "w", encoding="utf-8") as file:
+
+            json.dump(report_data, file, indent=4)
+
+        return report_path
+
+    except Exception as error:
+
+        print("Session report write error:", error)
+
+        return None
+
+    finally:
+
+        if cursor is not None:
+            cursor.close()
+
+        if connection is not None:
+            connection.close()
+
+
+@app.route("/api/monitor/terminate", methods=["POST"])
+def monitor_terminate():
+    """
+    Persist a forced exam termination when the Trust Score reaches zero.
+    Normal exam submission and its evaluation workflow are untouched.
+
+    On termination the teacher's live feed for this student is stopped
+    immediately (buffered frames are dropped) and a session report is
+    generated so it appears in the teacher's Reports panel.
+    """
+    connection = None
+    cursor = None
+
+    try:
+        data = request.get_json(silent=True) or {}
+
+        session_id = str(data.get("session_id", "")).strip()
+        student_id = str(data.get("student_id", "")).strip()
+        exam_name = str(data.get("exam_name", "PROCTIFY EXAM")).strip()
+        final_trust_score = max(
+            0,
+            min(100, int(data.get("final_trust_score", 0) or 0))
+        )
+        final_risk_level = (
+            str(data.get("final_risk_level", "HIGH")).strip()
+            or "HIGH"
+        )
+
+        if not session_id or not student_id:
+            return jsonify({
+                "success": False,
+                "error": "session_id and student_id are required."
+            }), 400
+
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({
+                "success": False,
+                "error": "Unable to connect to MySQL."
+            }), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT start_time
+            FROM exam_sessions
+            WHERE session_id = %s
+            LIMIT 1
+        """, (session_id,))
+        existing_session = cursor.fetchone() or {}
+        start_time = existing_session.get("start_time") or datetime.now()
+        end_time = datetime.now()
+
+        cursor.execute("""
+            INSERT INTO exam_sessions
+            (
+                session_id,
+                student_id,
+                exam_name,
+                start_time,
+                end_time,
+                status,
+                final_trust_score,
+                final_risk_level
+            )
+            VALUES (%s, %s, %s, %s, %s, 'TERMINATED', %s, %s)
+            ON DUPLICATE KEY UPDATE
+                student_id = VALUES(student_id),
+                exam_name = VALUES(exam_name),
+                end_time = VALUES(end_time),
+                status = 'TERMINATED',
+                final_trust_score = VALUES(final_trust_score),
+                final_risk_level = VALUES(final_risk_level)
+        """, (
+            session_id,
+            student_id,
+            exam_name,
+            start_time,
+            end_time,
+            final_trust_score,
+            final_risk_level
+        ))
+
+        cursor.execute("""
+            UPDATE live_students
+            SET status = 'TERMINATED',
+                trust_score = %s,
+                risk_level = %s,
+                phone = 0,
+                phone_count = 0,
+                person_count = 0,
+                face_count = 0,
+                hand_count = 0,
+                gaze = 'NO FACE',
+                head_direction = 'NO FACE',
+                audio = 'STOPPED',
+                audio_volume = 0,
+                camera_available = 0,
+                audio_available = 0,
+                ai_available = 0,
+                tab_available = 0
+            WHERE student_id = %s
+              AND session_id = %s
+        """, (
+            final_trust_score,
+            final_risk_level,
+            student_id,
+            session_id
+        ))
+
+        connection.commit()
+
+        # If this Flask instance owns the monitor process, stop it only
+        # after the authoritative MySQL termination state is committed.
+        process = monitor_processes.get(student_id)
+        if process is not None:
+            try:
+                if process.poll() is None:
+                    process.terminate()
+            except Exception as error:
+                print("Monitor termination process error:", error)
+
+        monitor_processes.pop(student_id, None)
+        monitor_session_ids.pop(student_id, None)
+
+        with CENTRAL_LIVE_LOCK:
+            CENTRAL_LIVE_HEARTBEATS.pop(student_id, None)
+
+        # ----------------------------------------------------
+        # STOP THE TEACHER'S LIVE FEED INSTANTLY
+        # ----------------------------------------------------
+        # Dropping the buffered frame starves the MJPEG stream, so
+        # /api/live/video/<student_id> stops emitting and the teacher
+        # monitor falls back to its terminated state.
+        # ----------------------------------------------------
+        with LIVE_VIDEO_LOCK:
+            LIVE_VIDEO_FRAMES.pop(student_id, None)
+
+        # ----------------------------------------------------
+        # GENERATE THE TERMINATION REPORT
+        # ----------------------------------------------------
+        report_path = None
+
+        try:
+
+            cursor.execute("""
+                SELECT start_time, end_time
+                FROM exam_sessions
+                WHERE session_id = %s
+                LIMIT 1
+            """, (session_id,))
+
+            row = cursor.fetchone() or {}
+
+            start_time_value = row.get("start_time")
+            end_time_value = row.get("end_time") or end_time
+
+            duration_seconds = 0
+
+            try:
+
+                if start_time_value is not None:
+                    duration_seconds = round(
+                        (
+                            end_time_value - start_time_value
+                        ).total_seconds(),
+                        2
+                    )
+
+            except Exception:
+                duration_seconds = 0
+
+            report_path = write_session_report(
+                session_id,
+                student_id,
+                exam_name,
+                {
+                    "start_time": _monitor_json_datetime(start_time_value),
+                    "end_time": _monitor_json_datetime(end_time_value),
+                    "duration_seconds": duration_seconds,
+                    "final_trust_score": final_trust_score,
+                    "final_risk_level": final_risk_level,
+                    "terminated": True,
+                    "termination_reason": "TRUST_SCORE_REACHED_ZERO"
+                }
+            )
+
+        except Exception as error:
+
+            print("Termination report error:", error)
+
+        return jsonify({
+            "success": True,
+            "terminated": True,
+            "session_id": session_id,
+            "trust_score": final_trust_score,
+            "risk_level": final_risk_level,
+            "report_path": report_path
+        })
+
+    except Exception as error:
+        if connection is not None:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+        print("Central termination error:", error)
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 500
+
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
 @app.route("/api/monitor/session-complete", methods=["POST"])
 def monitor_session_complete():
     connection = None
@@ -4540,6 +5591,13 @@ def monitor_session_complete():
         end_time = data.get("end_time")
         trust_score = int(data.get("final_trust_score", 100) or 100)
         risk_level = str(data.get("final_risk_level", "LOW"))
+
+        session_status = str(
+            data.get("status", "COMPLETED") or "COMPLETED"
+        ).strip().upper()
+
+        if session_status not in ("COMPLETED", "TERMINATED"):
+            session_status = "COMPLETED"
 
         if not session_id or not student_id:
             return jsonify({
@@ -4564,13 +5622,13 @@ def monitor_session_complete():
                 final_trust_score,
                 final_risk_level
             )
-            VALUES (%s, %s, %s, %s, %s, 'COMPLETED', %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
                 student_id = VALUES(student_id),
                 exam_name = VALUES(exam_name),
                 start_time = VALUES(start_time),
                 end_time = VALUES(end_time),
-                status = 'COMPLETED',
+                status = VALUES(status),
                 final_trust_score = VALUES(final_trust_score),
                 final_risk_level = VALUES(final_risk_level)
         """, (
@@ -4579,13 +5637,14 @@ def monitor_session_complete():
             exam_name,
             start_time,
             end_time,
+            session_status,
             trust_score,
             risk_level
         ))
 
         cursor.execute("""
             UPDATE live_students
-            SET status = 'OFFLINE',
+            SET status = %s,
                 phone = 0,
                 phone_count = 0,
                 person_count = 0,
@@ -4601,7 +5660,7 @@ def monitor_session_complete():
                 tab_available = 0
             WHERE student_id = %s
               AND session_id = %s
-        """, (student_id, session_id))
+        """, (session_status, student_id, session_id))
 
         connection.commit()
 
@@ -4627,89 +5686,42 @@ def monitor_session_complete():
 
 @app.route("/api/monitor/report", methods=["POST"])
 def monitor_report():
+
     try:
+
         data = request.get_json(silent=True) or {}
+
         session_id = str(data.get("session_id", "")).strip()
         student_id = str(data.get("student_id", "")).strip()
         exam_name = str(data.get("exam_name", "PROCTIFY EXAM")).strip()
 
         if not session_id or not student_id:
+
             return jsonify({
                 "success": False,
                 "error": "session_id and student_id are required."
             }), 400
 
-        connection = get_database_connection()
-        if connection is None:
-            return jsonify({"success": False, "error": "Unable to connect to MySQL."}), 500
-
-        cursor = connection.cursor(dictionary=True)
-        cursor.execute("""
-            SELECT final_trust_score, final_risk_level
-            FROM exam_sessions
-            WHERE session_id = %s
-            LIMIT 1
-        """, (session_id,))
-        session_row = cursor.fetchone() or {}
-
-        cursor.execute("""
-            SELECT id, violation_type, severity, penalty, description, timestamp
-            FROM violations
-            WHERE session_id = %s
-            ORDER BY timestamp ASC
-        """, (session_id,))
-        violations = cursor.fetchall()
-
-        cursor.execute("""
-            SELECT id, violation_id, file_path, timestamp
-            FROM evidence
-            WHERE session_id = %s
-            ORDER BY timestamp ASC
-        """, (session_id,))
-        evidence = cursor.fetchall()
-
-        for collection in (violations, evidence):
-            for row in collection:
-                for key, value in list(row.items()):
-                    row[key] = _monitor_json_datetime(value)
-
-        report_dir = os.path.join(BASE_DIR, "reports")
-        os.makedirs(report_dir, exist_ok=True)
-        report_path = os.path.join(
-            report_dir,
-            f"session_report_{session_id.replace(' ', '_')}.json"
+        report_path = write_session_report(
+            session_id,
+            student_id,
+            exam_name,
+            {
+                "start_time": data.get("start_time"),
+                "end_time": data.get("end_time"),
+                "duration_seconds": data.get("duration_seconds", 0),
+                "cheating_score": data.get("cheating_score", 0),
+                "final_trust_score": data.get("final_trust_score", 100),
+                "final_risk_level": data.get("final_risk_level", "LOW")
+            }
         )
 
-        report_data = {
-            "system": "PROCTIFY",
-            "session_id": session_id,
-            "student_id": student_id,
-            "exam_name": exam_name,
-            "start_time": data.get("start_time"),
-            "end_time": data.get("end_time"),
-            "duration_seconds": data.get("duration_seconds", 0),
-            "cheating_score": data.get("cheating_score", 0),
-            "final_trust_score": session_row.get(
-                "final_trust_score",
-                data.get("final_trust_score", 100)
-            ),
-            "final_risk_level": session_row.get(
-                "final_risk_level",
-                data.get("final_risk_level", "LOW")
-            ),
-            "total_violations": len(violations),
-            "total_evidence": len(evidence),
-            "violations": violations,
-            "evidence": evidence
-        }
+        if report_path is None:
 
-        with open(report_path, "w", encoding="utf-8") as file:
-            json.dump(report_data, file, indent=4)
-
-        cursor.close()
-        connection.close()
-        cursor = None
-        connection = None
+            return jsonify({
+                "success": False,
+                "error": "Report could not be generated."
+            }), 500
 
         return jsonify({
             "success": True,
@@ -4717,62 +5729,226 @@ def monitor_report():
         })
 
     except Exception as error:
+
         print("Central report generation error:", error)
+
         return jsonify({"success": False, "error": str(error)}), 500
-    finally:
-        if cursor is not None:
-            cursor.close()
-        if connection is not None:
-            connection.close()
 
 
 @app.route("/api/live/video/frame", methods=["POST"])
 def receive_live_video_frame():
+    """
+    Receive ONE already-encoded JPEG from a student agent.
+
+    The preferred transport is:
+        POST /api/live/video/frame?student_id=...&session_id=...
+        Content-Type: image/jpeg
+        Body: raw JPEG bytes
+
+    This avoids multipart/form-data parsing through Cloudflare, which
+    was producing intermittent Flask 400/500 errors.
+
+    Multipart uploads are still accepted for compatibility with older
+    student agents.
+    """
     try:
-        student_id = str(request.form.get("student_id", "")).strip()
-        session_id = str(request.form.get("session_id", "")).strip()
-        uploaded = request.files.get("frame")
+        # --------------------------------------------------------
+        # FIRST: read lightweight identity fields from query string.
+        # Query parameters avoid multipart parser failures.
+        # --------------------------------------------------------
+        student_id = str(
+            request.args.get(
+                "student_id",
+                ""
+            )
+        ).strip()
 
-        if uploaded is None:
-            # Also accept raw request bodies for compatibility with future agents.
-            raw = request.get_data()
+        session_id = str(
+            request.args.get(
+                "session_id",
+                ""
+            )
+        ).strip()
+
+        raw = b""
+
+        content_type = (
+            request.headers.get(
+                "Content-Type",
+                ""
+            ).lower()
+        )
+
+        # --------------------------------------------------------
+        # PREFERRED: raw JPEG body
+        # --------------------------------------------------------
+        if content_type.startswith("image/jpeg"):
+
+            raw = request.get_data(
+                cache=False,
+                as_text=False
+            )
+
         else:
-            raw = uploaded.read()
 
-        if not student_id or not session_id or not raw:
+            # ----------------------------------------------------
+            # COMPATIBILITY: multipart/form-data
+            # ----------------------------------------------------
+            #
+            # Older student agents send:
+            #   data = student_id/session_id
+            #   files = frame
+            #
+            # Only invoke Flask's multipart parser when needed.
+            # ----------------------------------------------------
+            try:
+
+                if not student_id:
+                    student_id = str(
+                        request.form.get(
+                            "student_id",
+                            ""
+                        )
+                    ).strip()
+
+                if not session_id:
+                    session_id = str(
+                        request.form.get(
+                            "session_id",
+                            ""
+                        )
+                    ).strip()
+
+                uploaded = request.files.get(
+                    "frame"
+                )
+
+                if uploaded is not None:
+                    raw = uploaded.read()
+
+                else:
+                    raw = request.get_data(
+                        cache=False,
+                        as_text=False
+                    )
+
+            except Exception as parse_error:
+
+                # Do not turn a malformed/aborted upload into an
+                # internal server error. The student agent will simply
+                # send the next newest frame.
+                print(
+                    "Live video request parsing skipped:",
+                    parse_error
+                )
+
+                return jsonify({
+                    "success": False,
+                    "error": "Invalid video frame request."
+                }), 400
+
+        # --------------------------------------------------------
+        # VALIDATION
+        # --------------------------------------------------------
+        if (
+            not student_id
+            or not session_id
+            or not raw
+        ):
+
             return jsonify({
                 "success": False,
-                "error": "student_id, session_id and frame are required."
+                "error": (
+                    "student_id, session_id and JPEG frame "
+                    "are required."
+                )
+            }), 400
+
+        # --------------------------------------------------------
+        # BASIC JPEG VALIDATION
+        # --------------------------------------------------------
+        #
+        # JPEG files normally start with FF D8 and end with FF D9.
+        # Rejecting invalid bodies prevents corrupt data from replacing
+        # a good frame in the teacher stream.
+        # --------------------------------------------------------
+        if (
+            len(raw) < 100
+            or not raw.startswith(b"\xff\xd8")
+        ):
+
+            return jsonify({
+                "success": False,
+                "error": "Invalid JPEG frame."
             }), 400
 
         now_mono = time.monotonic()
 
+        # --------------------------------------------------------
+        # STORE ONLY THE NEWEST FRAME
+        # --------------------------------------------------------
         with LIVE_VIDEO_LOCK:
+
             LIVE_VIDEO_FRAMES[student_id] = {
                 "session_id": session_id,
                 "frame": raw,
                 "updated": now_mono
             }
 
-        # Video frames are also a live heartbeat from the student agent.
+        # --------------------------------------------------------
+        # VIDEO FRAME ALSO ACTS AS LIVE HEARTBEAT
+        # --------------------------------------------------------
         with CENTRAL_LIVE_LOCK:
-            heartbeat = CENTRAL_LIVE_HEARTBEATS.get(student_id)
-            if heartbeat is not None and heartbeat.get("session_id") == session_id:
+
+            heartbeat = (
+                CENTRAL_LIVE_HEARTBEATS.get(
+                    student_id
+                )
+            )
+
+            if (
+                heartbeat is not None
+                and heartbeat.get("session_id")
+                == session_id
+            ):
+
                 heartbeat["updated"] = now_mono
 
-        return jsonify({"success": True})
+        return jsonify({
+            "success": True,
+            "student_id": student_id,
+            "session_id": session_id,
+            "frame_bytes": len(raw)
+        })
 
     except Exception as error:
-        print("Live video receive error:", error)
-        return jsonify({"success": False, "error": str(error)}), 500
+
+        print(
+            "Live video receive error:",
+            error
+        )
+
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 500
 
 
 @app.route("/api/live/video/<student_id>")
 def live_video_stream(student_id):
+    """
+    MJPEG stream of the newest processed frame for one student.
+
+    The stream closes by itself once frames stop arriving (student went
+    offline, or the session was terminated at Trust Score 0). Without
+    this the browser held an empty multipart response open forever and
+    the teacher's monitor never noticed the feed had ended.
+    """
     student_id = str(student_id).strip()
 
     def generate():
         last_sent = None
+        idle_since = time.monotonic()
 
         while True:
             with LIVE_VIDEO_LOCK:
@@ -4785,6 +5961,7 @@ def live_video_stream(student_id):
 
             if frame is not None and frame != last_sent:
                 last_sent = frame
+                idle_since = time.monotonic()
                 yield (
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n"
@@ -4793,21 +5970,75 @@ def live_video_stream(student_id):
                     + b"\r\n"
                 )
 
+            if time.monotonic() - idle_since > LIVE_VIDEO_IDLE_TIMEOUT:
+                # No fresh frame for a while: the live feed is over.
+                print(
+                    "Live video stream closed for",
+                    student_id,
+                    "(no frames for",
+                    LIVE_VIDEO_IDLE_TIMEOUT,
+                    "seconds)"
+                )
+                return
+
             time.sleep(0.05)
 
     return Response(
         generate(),
         mimetype="multipart/x-mixed-replace; boundary=frame",
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
-    )
+    )# ============================================================
+# MONITORING REPORTS
+# ============================================================
+# Reports are SESSION-centric, not submission-centric.
+#
+# Every finished monitoring session (COMPLETED or TERMINATED)
+# produces exactly one report, even when the student was force
+# terminated at Trust Score 0 and never submitted any answers.
+# ============================================================
+
+def _risk_from_trust(trust):
+
+    if trust is None:
+        return "LOW"
+
+    try:
+        score = int(trust)
+    except (TypeError, ValueError):
+        return "LOW"
+
+    if score < 50:
+        return "HIGH"
+
+    if score < 75:
+        return "MEDIUM"
+
+    return "LOW"
 
 
-# ============================================================
-# SQL-ONLY REPORT COMPATIBILITY ENDPOINTS
-# ============================================================
-# These endpoints exist so older/cached dashboard JavaScript that
-# calls /api/reports still reads exclusively from MySQL.
-# ============================================================
+def _session_submission_cursor(cursor, session_id):
+
+    cursor.execute("""
+        SELECT
+            submission_id,
+            exam_id,
+            score,
+            teacher_marks,
+            teacher_feedback,
+            total_questions,
+            submitted_at,
+            evaluated_at,
+            status,
+            evaluation_type,
+            trust_score
+        FROM exam_submissions
+        WHERE session_id = %s
+        ORDER BY submission_id DESC
+        LIMIT 1
+    """, (str(session_id),))
+
+    return cursor.fetchone()
+
 
 @app.route("/api/reports", methods=["GET"])
 def api_reports_sql_only():
@@ -4821,67 +6052,81 @@ def api_reports_sql_only():
         cursor = connection.cursor(dictionary=True)
         cursor.execute("""
             SELECT
-                es.submission_id,
-                es.exam_id,
-                e.exam_name,
+                es.session_id,
                 es.student_id,
                 s.student_name,
-                es.session_id,
-                es.score,
-                es.teacher_marks,
-                es.trust_score,
-                es.total_questions,
-                es.submitted_at,
-                es.evaluated_at,
+                es.exam_name,
+                es.start_time,
+                es.end_time,
                 es.status,
-                es.evaluation_type,
-                es.teacher_feedback
-            FROM exam_submissions es
+                es.final_trust_score,
+                es.final_risk_level,
+                (
+                    SELECT COUNT(*)
+                    FROM violations v
+                    WHERE v.session_id = es.session_id
+                ) AS violation_count,
+                (
+                    SELECT COUNT(*)
+                    FROM evidence ev
+                    WHERE ev.session_id = es.session_id
+                ) AS evidence_count,
+                (
+                    SELECT sub.submission_id
+                    FROM exam_submissions sub
+                    WHERE sub.session_id = es.session_id
+                    ORDER BY sub.submission_id DESC
+                    LIMIT 1
+                ) AS submission_id,
+                (
+                    SELECT sub.score
+                    FROM exam_submissions sub
+                    WHERE sub.session_id = es.session_id
+                    ORDER BY sub.submission_id DESC
+                    LIMIT 1
+                ) AS score,
+                (
+                    SELECT sub.status
+                    FROM exam_submissions sub
+                    WHERE sub.session_id = es.session_id
+                    ORDER BY sub.submission_id DESC
+                    LIMIT 1
+                ) AS submission_status,
+                (
+                    SELECT sub.evaluation_type
+                    FROM exam_submissions sub
+                    WHERE sub.session_id = es.session_id
+                    ORDER BY sub.submission_id DESC
+                    LIMIT 1
+                ) AS evaluation_type
+            FROM exam_sessions es
             LEFT JOIN students s ON s.student_id = es.student_id
-            LEFT JOIN exams e ON e.exam_id = es.exam_id
-            ORDER BY es.submitted_at DESC
+            WHERE UPPER(es.status) IN ('COMPLETED', 'TERMINATED')
+            ORDER BY es.start_time DESC
         """)
+
         rows = cursor.fetchall()
         reports = []
 
         for row in rows:
-            session_id = row.get("session_id")
-            violation_count = 0
-            evidence_count = 0
 
-            if session_id:
-                cursor.execute(
-                    "SELECT COUNT(*) AS c FROM violations WHERE session_id = %s",
-                    (str(session_id),)
-                )
-                violation_count = int((cursor.fetchone() or {}).get("c", 0) or 0)
-
-                cursor.execute(
-                    "SELECT COUNT(*) AS c FROM evidence WHERE session_id = %s",
-                    (str(session_id),)
-                )
-                evidence_count = int((cursor.fetchone() or {}).get("c", 0) or 0)
-
-            trust = row.get("trust_score")
-            if trust is None:
-                risk = "LOW"
-            elif int(trust) < 50:
-                risk = "HIGH"
-            elif int(trust) < 75:
-                risk = "MEDIUM"
-            else:
-                risk = "LOW"
+            trust = row.get("final_trust_score")
 
             for key, value in list(row.items()):
                 if isinstance(value, datetime):
                     row[key] = value.isoformat()
 
+            status = str(row.get("status") or "").upper()
+
             reports.append({
                 **row,
-                "final_trust_score": row.get("trust_score"),
-                "final_risk_level": risk,
-                "violation_count": violation_count,
-                "evidence_count": evidence_count
+                "final_trust_score": trust,
+                "final_risk_level": (
+                    row.get("final_risk_level") or _risk_from_trust(trust)
+                ),
+                "violation_count": int(row.get("violation_count") or 0),
+                "evidence_count": int(row.get("evidence_count") or 0),
+                "terminated": status == "TERMINATED"
             })
 
         return jsonify({"success": True, "reports": reports})
@@ -4899,56 +6144,117 @@ def api_reports_sql_only():
 
 @app.route("/api/reports/<session_id>", methods=["GET"])
 def api_report_by_session_sql_only(session_id):
+    """
+    Full report for one monitoring session.
+
+    Works even when the session was force-terminated at Trust Score 0
+    and therefore has NO exam_submission row.
+    """
     connection = None
     cursor = None
     try:
+        session_id = str(session_id).strip()
+
         connection = get_database_connection()
         if connection is None:
             return jsonify({"success": False, "error": "Unable to connect to MySQL."}), 500
 
         cursor = connection.cursor(dictionary=True)
-        cursor.execute("""
-            SELECT submission_id
-            FROM exam_submissions
-            WHERE session_id = %s
-            ORDER BY submission_id DESC
-            LIMIT 1
-        """, (str(session_id),))
-        row = cursor.fetchone()
 
-        if row is None:
+        cursor.execute("""
+            SELECT
+                es.session_id,
+                es.student_id,
+                s.student_name,
+                es.exam_name,
+                es.start_time,
+                es.end_time,
+                es.status,
+                es.final_trust_score,
+                es.final_risk_level
+            FROM exam_sessions es
+            LEFT JOIN students s ON s.student_id = es.student_id
+            WHERE es.session_id = %s
+            LIMIT 1
+        """, (session_id,))
+
+        session_row = cursor.fetchone()
+
+        if session_row is None:
             return jsonify({
                 "success": False,
-                "error": "No MySQL submission found for this session."
+                "error": "No monitoring session found for this ID."
             }), 404
 
-        submission_id = int(row["submission_id"])
-        report = get_submission_report_data(submission_id)
+        cursor.execute("""
+            SELECT id, violation_type, severity, penalty, description, timestamp
+            FROM violations
+            WHERE session_id = %s
+            ORDER BY timestamp ASC
+        """, (session_id,))
+        violations = cursor.fetchall()
 
-        if report is None:
-            return jsonify({"success": False, "error": "Submission report not found."}), 404
+        cursor.execute("""
+            SELECT id, violation_id, file_path, timestamp
+            FROM evidence
+            WHERE session_id = %s
+            ORDER BY timestamp ASC
+        """, (session_id,))
+        evidence = cursor.fetchall()
 
-        trust = report.get("trust_score")
-        if trust is None:
-            risk = "LOW"
-        elif int(trust) < 50:
-            risk = "HIGH"
-        elif int(trust) < 75:
-            risk = "MEDIUM"
-        else:
-            risk = "LOW"
+        submission = _session_submission_cursor(cursor, session_id)
 
-        report["final_trust_score"] = trust
-        report["final_risk_level"] = risk
-        report["violation_count"] = len(report.get("violations", []))
-        report["evidence_count"] = len(report.get("evidence", []))
+        for collection in (violations, evidence):
+            for row in collection:
+                for key, value in list(row.items()):
+                    if isinstance(value, datetime):
+                        row[key] = value.isoformat()
 
-        generate_submission_report(submission_id)
+        for key, value in list(session_row.items()):
+            if isinstance(value, datetime):
+                session_row[key] = value.isoformat()
+
+        if submission:
+            for key, value in list(submission.items()):
+                if isinstance(value, datetime):
+                    submission[key] = value.isoformat()
+
+        trust = session_row.get("final_trust_score")
+
+        report = {
+            **session_row,
+            "exam_id": (submission or {}).get("exam_id"),
+            "submission_id": (submission or {}).get("submission_id"),
+            "score": (submission or {}).get("score"),
+            "teacher_marks": (submission or {}).get("teacher_marks"),
+            "teacher_feedback": (submission or {}).get("teacher_feedback"),
+            "total_questions": (submission or {}).get("total_questions"),
+            "submitted_at": (submission or {}).get("submitted_at"),
+            "evaluated_at": (submission or {}).get("evaluated_at"),
+            "status": session_row.get("status"),
+            "evaluation_type": (submission or {}).get("evaluation_type"),
+            "final_trust_score": trust,
+            "final_risk_level": (
+                session_row.get("final_risk_level") or _risk_from_trust(trust)
+            ),
+            "terminated": str(session_row.get("status") or "").upper() == "TERMINATED",
+            "violations": violations,
+            "evidence": evidence,
+            "total_violations": len(violations),
+            "total_evidence": len(evidence)
+        }
+
+        report_url = None
+
+        if submission:
+            submission_id = int(submission["submission_id"])
+            generate_submission_report(submission_id)
+            report_url = f"/submission-report/{submission_id}"
 
         return jsonify({
             "success": True,
             "report": report,
-            "report_url": f"/submission-report/{submission_id}"
+            "report_url": report_url
         })
 
     except Exception as error:
@@ -4978,9 +6284,21 @@ def api_submission_detail(submission_id):
 
 @app.route("/api/submissions/<int:submission_id>/evaluate", methods=["POST"])
 def evaluate_submission(submission_id):
+    """
+    Teacher manual evaluation.
+
+    Works for BOTH cases:
+      - PENDING_REVIEW  (Trust Score was below the auto threshold)
+      - EVALUATED       (teacher overrides / corrects an auto score)
+
+    The generated HTML report is always refreshed afterwards.
+    """
     connection = None
     cursor = None
     try:
+        if not teacher_logged_in():
+            return jsonify({"success": False, "error": "Teacher login required."}), 401
+
         data = request.get_json(silent=True) or {}
         try:
             marks = float(data.get("marks"))
@@ -5009,10 +6327,9 @@ def evaluate_submission(submission_id):
         if row is None:
             return jsonify({"success": False, "error": "Submission not found."}), 404
 
-        if str(row["status"] or "").upper() != "PENDING_REVIEW":
-            return jsonify({"success": False, "error": "Submission is already evaluated."}), 409
-
+        previous_status = str(row["status"] or "").upper()
         now = datetime.now()
+
         cursor.execute("""
             UPDATE exam_submissions
             SET score = %s,
@@ -5025,11 +6342,13 @@ def evaluate_submission(submission_id):
         """, (marks, marks, feedback or None, now, int(submission_id)))
 
         connection.commit()
+
         path = generate_submission_report(submission_id)
         report = get_submission_report_data(submission_id)
 
         return jsonify({
             "success": True,
+            "reevaluated": previous_status == "EVALUATED",
             "submission": report,
             "report_url": f"/submission-report/{submission_id}" if path else None
         })
@@ -5085,6 +6404,597 @@ def api_evidence_image(evidence_id):
     finally:
         if cursor is not None: cursor.close()
         if connection is not None: connection.close()
+
+
+# ============================================================
+# DATA CLEANUP - DELETE / CLEAR
+# ============================================================
+# Deleting an exam, a student or a single submission also removes
+# every dependent row AND the evidence JPEG on disk. Nothing is
+# left orphaned in MySQL or in reports/evidence.
+# ============================================================
+
+EVIDENCE_DIR = os.path.join(BASE_DIR, "reports", "evidence")
+
+
+def _remove_evidence_files(file_paths):
+
+    removed = 0
+
+    for raw_path in file_paths or []:
+
+        if not raw_path:
+            continue
+
+        candidates = [
+
+            str(raw_path),
+
+            os.path.join(
+                EVIDENCE_DIR,
+                os.path.basename(str(raw_path))
+            )
+        ]
+
+        for candidate in candidates:
+
+            try:
+
+                if os.path.isfile(candidate):
+
+                    os.remove(candidate)
+                    removed += 1
+                    break
+
+            except Exception as error:
+
+                print("Evidence delete error:", candidate, error)
+
+    return removed
+
+
+def _first_column(row):
+    """
+    Read the first column of a row from EITHER a tuple cursor or a
+    dictionary cursor.
+
+    Mixing the two was the bug that made delete/clear fail with the
+    confusing error "0" (str(KeyError(0))).
+    """
+
+    if row is None:
+        return None
+
+    if isinstance(row, dict):
+
+        for value in row.values():
+            return value
+
+        return None
+
+    try:
+        return row[0]
+    except (IndexError, TypeError, KeyError):
+        return None
+
+
+def _collect_session_ids(cursor, exam_id):
+    """
+    Every monitoring session that belongs to an exam.
+
+    Sessions are matched through the exam id directly, or through any
+    submission for that exam. A JOIN is used instead of a scalar
+    subquery so two exams sharing a name cannot break the statement.
+    """
+
+    cursor.execute("""
+        SELECT DISTINCT es.session_id
+        FROM exam_sessions es
+        INNER JOIN exams e ON e.exam_name = es.exam_name
+        WHERE e.exam_id = %s
+
+        UNION
+
+        SELECT DISTINCT s.session_id
+        FROM exam_submissions s
+        WHERE s.exam_id = %s
+          AND s.session_id IS NOT NULL
+    """, (exam_id, exam_id))
+
+    session_ids = []
+
+    for row in cursor.fetchall():
+
+        value = _first_column(row)
+
+        if value:
+            session_ids.append(str(value))
+
+    return session_ids
+
+
+def _delete_sessions_data(cursor, session_ids):
+
+    totals = {
+        "sessions": 0,
+        "violations": 0,
+        "evidence": 0,
+        "files": 0
+    }
+
+    for session_id in session_ids:
+
+        cursor.execute(
+            "SELECT file_path FROM evidence WHERE session_id = %s",
+            (session_id,)
+        )
+
+        file_paths = [
+            _first_column(row)
+            for row in cursor.fetchall()
+        ]
+
+        totals["files"] += _remove_evidence_files(file_paths)
+
+        cursor.execute(
+            "DELETE FROM evidence WHERE session_id = %s",
+            (session_id,)
+        )
+        totals["evidence"] += cursor.rowcount
+
+        cursor.execute(
+            "DELETE FROM violations WHERE session_id = %s",
+            (session_id,)
+        )
+        totals["violations"] += cursor.rowcount
+
+        cursor.execute(
+            "DELETE FROM trust_score_history WHERE session_id = %s",
+            (session_id,)
+        )
+
+        cursor.execute(
+            "DELETE FROM exam_sessions WHERE session_id = %s",
+            (session_id,)
+        )
+        totals["sessions"] += cursor.rowcount
+
+    return totals
+
+
+@app.route(
+    "/api/exams/<exam_id>",
+    methods=["DELETE"]
+)
+def delete_exam(exam_id):
+    """Delete an exam and every record + evidence file it produced."""
+
+    if not teacher_logged_in():
+
+        return jsonify({
+            "success": False,
+            "error": "Teacher login required."
+        }), 401
+
+    connection = None
+    cursor = None
+
+    try:
+
+        exam_id = str(exam_id).strip()
+
+        connection = get_database_connection()
+
+        if connection is None:
+
+            return jsonify({
+                "success": False,
+                "error": "Unable to connect to MySQL."
+            }), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute(
+            "SELECT exam_id, exam_name FROM exams WHERE exam_id = %s LIMIT 1",
+            (exam_id,)
+        )
+
+        exam = cursor.fetchone()
+
+        if exam is None:
+
+            return jsonify({
+                "success": False,
+                "error": "Exam not found."
+            }), 404
+
+        session_ids = _collect_session_ids(cursor, exam_id)
+
+        removed = _delete_sessions_data(cursor, session_ids)
+
+        cursor.execute(
+            "DELETE FROM exam_submissions WHERE exam_id = %s",
+            (exam_id,)
+        )
+        submissions_deleted = cursor.rowcount
+
+        cursor.execute(
+            "DELETE FROM exam_assignments WHERE exam_id = %s",
+            (exam_id,)
+        )
+        assignments_deleted = cursor.rowcount
+
+        cursor.execute(
+            "DELETE FROM exams WHERE exam_id = %s",
+            (exam_id,)
+        )
+        exams_deleted = cursor.rowcount
+
+        connection.commit()
+
+        return jsonify({
+            "success": True,
+            "deleted": {
+                "exam_id": exam_id,
+                "exam_name": exam.get("exam_name"),
+                "exams": exams_deleted,
+                "assignments": assignments_deleted,
+                "submissions": submissions_deleted,
+                **removed
+            }
+        })
+
+    except Exception as error:
+
+        if connection is not None:
+
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+
+        print("Delete exam error:", error)
+
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 500
+
+    finally:
+
+        if cursor is not None:
+            cursor.close()
+
+        if connection is not None:
+            connection.close()
+
+
+@app.route(
+    "/api/exams/<exam_id>/clear-data",
+    methods=["POST"]
+)
+def clear_exam_data(exam_id):
+    """
+    Wipe only the recorded data of an exam (sessions, violations,
+    evidence, submissions) and keep the exam itself intact.
+    """
+
+    if not teacher_logged_in():
+
+        return jsonify({
+            "success": False,
+            "error": "Teacher login required."
+        }), 401
+
+    connection = None
+    cursor = None
+
+    try:
+
+        exam_id = str(exam_id).strip()
+
+        connection = get_database_connection()
+
+        if connection is None:
+
+            return jsonify({
+                "success": False,
+                "error": "Unable to connect to MySQL."
+            }), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute(
+            "SELECT exam_id, exam_name FROM exams WHERE exam_id = %s LIMIT 1",
+            (exam_id,)
+        )
+
+        exam = cursor.fetchone()
+
+        if exam is None:
+
+            return jsonify({
+                "success": False,
+                "error": "Exam not found."
+            }), 404
+
+        session_ids = _collect_session_ids(cursor, exam_id)
+
+        removed = _delete_sessions_data(cursor, session_ids)
+
+        cursor.execute(
+            "DELETE FROM exam_submissions WHERE exam_id = %s",
+            (exam_id,)
+        )
+        submissions_deleted = cursor.rowcount
+
+        connection.commit()
+
+        return jsonify({
+            "success": True,
+            "cleared": {
+                "exam_id": exam_id,
+                "submissions": submissions_deleted,
+                **removed
+            }
+        })
+
+    except Exception as error:
+
+        if connection is not None:
+
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+
+        print("Clear exam data error:", error)
+
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 500
+
+    finally:
+
+        if cursor is not None:
+            cursor.close()
+
+        if connection is not None:
+            connection.close()
+
+
+@app.route(
+    "/api/submissions/<int:submission_id>",
+    methods=["DELETE"]
+)
+def delete_submission(submission_id):
+
+    if not teacher_logged_in():
+
+        return jsonify({
+            "success": False,
+            "error": "Teacher login required."
+        }), 401
+
+    connection = None
+    cursor = None
+
+    try:
+
+        connection = get_database_connection()
+
+        if connection is None:
+
+            return jsonify({
+                "success": False,
+                "error": "Unable to connect to MySQL."
+            }), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute(
+            "DELETE FROM exam_submissions WHERE submission_id = %s",
+            (int(submission_id),)
+        )
+
+        deleted = cursor.rowcount
+
+        connection.commit()
+
+        # Remove the generated HTML report as well.
+        report_path = os.path.join(
+            SUBMISSION_REPORTS_DIR,
+            f"submission_{int(submission_id)}.html"
+        )
+
+        try:
+
+            if os.path.isfile(report_path):
+                os.remove(report_path)
+
+        except Exception as error:
+
+            print("Submission report delete error:", error)
+
+        return jsonify({
+            "success": True,
+            "deleted": deleted
+        })
+
+    except Exception as error:
+
+        if connection is not None:
+
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+
+        print("Delete submission error:", error)
+
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 500
+
+    finally:
+
+        if cursor is not None:
+            cursor.close()
+
+        if connection is not None:
+            connection.close()
+
+
+@app.route(
+    "/api/students/<student_id>",
+    methods=["DELETE"]
+)
+def delete_student(student_id):
+    """
+    Remove a student account together with every session, violation,
+    evidence file and submission that belongs to it.
+    """
+
+    if not teacher_logged_in():
+
+        return jsonify({
+            "success": False,
+            "error": "Teacher login required."
+        }), 401
+
+    connection = None
+    cursor = None
+
+    try:
+
+        student_id = str(student_id).strip()
+
+        connection = get_database_connection()
+
+        if connection is None:
+
+            return jsonify({
+                "success": False,
+                "error": "Unable to connect to MySQL."
+            }), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute(
+            "SELECT student_id FROM students WHERE student_id = %s LIMIT 1",
+            (student_id,)
+        )
+
+        if cursor.fetchone() is None:
+
+            return jsonify({
+                "success": False,
+                "error": "Student not found."
+            }), 404
+
+        cursor.execute(
+            "SELECT DISTINCT session_id FROM exam_sessions WHERE student_id = %s",
+            (student_id,)
+        )
+
+        session_ids = []
+
+        for row in cursor.fetchall():
+
+            value = _first_column(row)
+
+            if value:
+                session_ids.append(str(value))
+
+        # Submissions can reference a session that has no exam_sessions row.
+        cursor.execute(
+            "SELECT DISTINCT session_id FROM exam_submissions WHERE student_id = %s",
+            (student_id,)
+        )
+
+        for row in cursor.fetchall():
+
+            value = _first_column(row)
+
+            if value and str(value) not in session_ids:
+                session_ids.append(str(value))
+
+        removed = _delete_sessions_data(cursor, session_ids)
+
+        cursor.execute(
+            "DELETE FROM exam_submissions WHERE student_id = %s",
+            (student_id,)
+        )
+        submissions_deleted = cursor.rowcount
+
+        cursor.execute(
+            "DELETE FROM exam_assignments WHERE student_id = %s",
+            (student_id,)
+        )
+        assignments_deleted = cursor.rowcount
+
+        cursor.execute(
+            "DELETE FROM live_students WHERE student_id = %s",
+            (student_id,)
+        )
+
+        cursor.execute(
+            "DELETE FROM students WHERE student_id = %s",
+            (student_id,)
+        )
+
+        connection.commit()
+
+        # Face profile image is part of the student's data.
+        profile_path = os.path.join(
+            FACE_PROFILES_DIR,
+            f"{student_id}.jpg"
+        )
+
+        try:
+
+            if os.path.isfile(profile_path):
+                os.remove(profile_path)
+
+        except Exception as error:
+
+            print("Face profile delete error:", error)
+
+        return jsonify({
+            "success": True,
+            "deleted": {
+                "student_id": student_id,
+                "assignments": assignments_deleted,
+                "submissions": submissions_deleted,
+                **removed
+            }
+        })
+
+    except Exception as error:
+
+        if connection is not None:
+
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+
+        print("Delete student error:", error)
+
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 500
+
+    finally:
+
+        if cursor is not None:
+            cursor.close()
+
+        if connection is not None:
+            connection.close()
 
 
 # ============================================================
@@ -5717,9 +7627,11 @@ def submit_exam(exam_id):
             session_id=session_id
         )
 
-        # End the student's login session after successful submission.
-        # A later login will see this exam as ATTEMPTED and cannot reopen it.
-        session.clear()
+        # End the active exam session after successful submission.
+        # The student remains logged in so they can return to their
+        # dashboard and see the submission result in the report.
+        session.pop("active_session_id", None)
+        session.pop("active_exam_id", None)
 
 
         # ----------------------------------------------------
@@ -5917,8 +7829,13 @@ def monitor_student(student_id):
                 ) AS last_event
             FROM live_students ls
             WHERE ls.student_id = %s
-              AND UPPER(ls.status) = 'ONLINE'
-              AND ls.last_update >= (NOW() - INTERVAL 5 SECOND)
+              AND (
+                    (
+                        UPPER(ls.status) = 'ONLINE'
+                        AND ls.last_update >= (NOW() - INTERVAL 5 SECOND)
+                    )
+                    OR UPPER(ls.status) = 'TERMINATED'
+              )
             LIMIT 1
         """, (str(student_id),))
 
@@ -5939,7 +7856,11 @@ def monitor_student(student_id):
             student=selected_student,
             violations=violations,
             evidence=evidence,
-            trust_history=trust_history
+            trust_history=trust_history,
+            terminated=(
+                str(selected_student.get("status") or "").upper()
+                == "TERMINATED"
+            )
         )
 
     except Exception as error:
@@ -6317,6 +8238,335 @@ def get_enrolled_students():
 
 
 # ============================================================
+# EXCEL UPLOAD HELPERS
+# ============================================================
+
+def _normalize_excel_header(header):
+    return header.replace(" ", "").strip().lower()
+
+
+def _excel_headers(worksheet):
+    headers = []
+    for cell in worksheet[1]:
+        headers.append(str(cell.value or "").strip())
+    return headers
+
+
+def _excel_rows(worksheet):
+    rows = []
+    for row in worksheet.iter_rows(min_row=2, values_only=True):
+        if row is None:
+            continue
+        values = ["" if v is None else str(v).strip() for v in row]
+        if not any(values):
+            continue
+        rows.append(values)
+    return rows
+
+
+# ============================================================
+# EXCEL BULK STUDENT ENROLLMENT
+# ============================================================
+
+@app.route(
+    "/api/students/enroll/excel",
+    methods=["POST"]
+)
+def excel_enroll_students():
+
+    try:
+        import openpyxl
+        import io
+    except ImportError:
+        return jsonify({
+            "success": False,
+            "error": "openpyxl is not installed on the server."
+        }), 500
+
+    if "file" not in request.files:
+        return jsonify({"success": False, "error": "No file uploaded."}), 400
+
+    uploaded = request.files["file"]
+
+    if not uploaded.filename.lower().endswith(".xlsx"):
+        return jsonify({"success": False, "error": "Please upload a .xlsx file."}), 400
+
+    try:
+        workbook = openpyxl.load_workbook(io.BytesIO(uploaded.read()))
+        sheet = workbook.active
+    except Exception as error:
+        return jsonify({"success": False, "error": f"Cannot read workbook: {error}"}), 400
+
+    headers = _excel_headers(sheet)
+    normalized = {_normalize_excel_header(h): i for i, h in enumerate(headers)}
+
+    id_index = normalized.get("student_id") or normalized.get("studentid")
+    name_index = normalized.get("student_name") or normalized.get("studentname")
+    username_index = normalized.get("username")
+    password_index = normalized.get("password")
+
+    if id_index is None or name_index is None:
+        return jsonify({
+            "success": False,
+            "error": "Workbook must have a header row with 'student_id', 'student_name', 'username' and 'password'."
+        }), 400
+
+    rows = _excel_rows(sheet)
+
+    connection = get_database_connection()
+
+    if connection is None:
+        return jsonify({"success": False, "error": "Database unavailable."}), 500
+
+    cursor = None
+    inserted = 0
+    duplicate = 0
+    failures = []
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+
+        row_number = 1
+        for row in rows:
+
+            row_number += 1
+
+            if id_index >= len(row) or name_index >= len(row):
+                failures.append({"row": row_number, "reason": "Row has insufficient columns"})
+                continue
+
+            student_id = row[id_index] if id_index < len(row) else ""
+            student_name = row[name_index] if name_index < len(row) else ""
+            if username_index is not None and username_index < len(row) and row[username_index]:
+                username = row[username_index]
+            else:
+                username = student_name.split()[0].lower() if student_name else student_id
+            if password_index is not None and password_index < len(row) and row[password_index]:
+                password = row[password_index]
+            else:
+                import hashlib
+                password = hashlib.sha256(student_id.encode()).hexdigest()[:12]
+
+            if not student_id or not student_name:
+                failures.append({"row": row_number, "reason": "Missing student_id or student_name"})
+                continue
+
+            cursor.execute(
+                "SELECT student_id FROM students WHERE student_id = %s OR username = %s LIMIT 1",
+                (student_id, username)
+            )
+
+            if cursor.fetchone() is not None:
+                duplicate += 1
+                continue
+
+            cursor.execute(
+                """
+                INSERT INTO students
+                    (student_id, student_name, username, password)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (student_id, student_name, username, password)
+            )
+
+            inserted += 1
+
+        connection.commit()
+
+        return jsonify({
+            "success": True,
+            "inserted": inserted,
+            "duplicate": duplicate,
+            "failures": failures
+        }), 200
+
+    except mysql.connector.Error as error:
+        if connection is not None:
+            connection.rollback()
+        return jsonify({"success": False, "error": f"Database error: {error}"}), 500
+
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+# ============================================================
+# EXCEL BULK EXAM ASSIGNMENT
+# ============================================================
+
+@app.route(
+    "/api/exams/<exam_id>/assign/excel",
+    methods=["POST"]
+)
+def excel_assign_exam(exam_id):
+
+    if not teacher_logged_in():
+
+        return jsonify({
+            "success": False,
+            "error": "Teacher login required."
+        }), 401
+
+    try:
+        import openpyxl
+        import io
+    except ImportError:
+        return jsonify({
+            "success": False,
+            "error": "openpyxl is not installed on the server."
+        }), 500
+
+    if "file" not in request.files:
+        return jsonify({"success": False, "error": "No file uploaded."}), 400
+
+    uploaded = request.files["file"]
+
+    if not uploaded.filename.lower().endswith(".xlsx"):
+        return jsonify({"success": False, "error": "Please upload a .xlsx file."}), 400
+
+    try:
+        workbook = openpyxl.load_workbook(io.BytesIO(uploaded.read()))
+        sheet = workbook.active
+    except Exception as error:
+        return jsonify({"success": False, "error": f"Cannot read workbook: {error}"}), 400
+
+    headers = _excel_headers(sheet)
+    normalized = {_normalize_excel_header(h): i for i, h in enumerate(headers)}
+
+    id_index = normalized.get("student_id") or normalized.get("studentid")
+
+    if id_index is None:
+        return jsonify({
+            "success": False,
+            "error": "Workbook must have a header row with a 'student_id' column."
+        }), 400
+
+    rows = _excel_rows(sheet)
+    student_ids = [row[id_index] for row in rows if id_index < len(row) and row[id_index]]
+
+    connection = get_database_connection()
+
+    if connection is None:
+        return jsonify({"success": False, "error": "Database unavailable."}), 500
+
+    cursor = None
+    assigned = 0
+    unknown = []
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute(
+            "SELECT exam_id FROM exams WHERE exam_id = %s LIMIT 1",
+            (str(exam_id),)
+        )
+
+        if cursor.fetchone() is None:
+            return jsonify({"success": False, "error": "Exam not found."}), 404
+
+        cursor.execute(
+            "SELECT student_id FROM students WHERE student_id IN (%s)" % (
+                ",".join(["%s"] * len(student_ids))
+            ),
+            tuple(student_ids)
+        )
+
+        known = {str(row["student_id"]) for row in cursor.fetchall()}
+
+        for student_id in student_ids:
+            if student_id not in known:
+                unknown.append(student_id)
+                continue
+            cursor.execute(
+                "INSERT IGNORE INTO exam_assignments (exam_id, student_id) VALUES (%s, %s)",
+                (str(exam_id), student_id)
+            )
+            if cursor.rowcount == 1:
+                assigned += 1
+
+        connection.commit()
+
+        return jsonify({
+            "success": True,
+            "assigned": assigned,
+            "unknown": unknown
+        }), 200
+
+    except mysql.connector.Error as error:
+        if connection is not None:
+            connection.rollback()
+        return jsonify({"success": False, "error": f"Database error: {error}"}), 500
+
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+# ============================================================
+# EXCEL TEMPLATES
+# ============================================================
+
+@app.route("/api/excel/enrollment-template")
+def excel_enrollment_template():
+
+    try:
+        import openpyxl
+        import io
+    except ImportError:
+        return jsonify({"success": False, "error": "openpyxl is not installed on the server."}), 500
+
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Students"
+    sheet.append(["student_id", "student_name", "username", "password"])
+    sheet.append(["101", "Student Name 1", "student101", "proctify123"])
+    sheet.append(["102", "Student Name 2", "student102", "proctify123"])
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name="proctify_students_template.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
+@app.route("/api/excel/assignment-template")
+def excel_assignment_template():
+
+    try:
+        import openpyxl
+        import io
+    except ImportError:
+        return jsonify({"success": False, "error": "openpyxl is not installed on the server."}), 500
+
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Assignments"
+    sheet.append(["student_id"])
+    sheet.append(["101"])
+    sheet.append(["102"])
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name="proctify_assignment_template.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
+# ============================================================
 # HEALTH CHECK
 # ============================================================
 
@@ -6545,30 +8795,51 @@ if __name__ == "__main__":
     print(
         "========================================"
     )
+
+    if ensure_mysql_schema():
+
+        print(
+            "MySQL schema: OK  (database:",
+            DB_CONFIG["database"],
+            ")"
+        )
+
     print(
-        "Live status file:"
+        "Teacher login:",
+        TEACHER_DEFAULT_USERNAME,
+        "/",
+        TEACHER_DEFAULT_PASSWORD
     )
+
     print(
-        LIVE_STATUS_FILE
+        "Student login:",
+        "/  (select the Student role)"
     )
+
     print()
+
     print(
         "Dashboard:"
     )
+
     print(
         "http://127.0.0.1:5000"
     )
+
     print(
         "========================================"
     )
+
     print()
 
     app.run(
 
         host="0.0.0.0",
 
-        port=5000,
+        port=int(os.environ.get("PROCTIFY_PORT", 5000)),
 
-        debug=True
+        debug=False,
+
+        threaded=True
 
     )

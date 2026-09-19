@@ -630,9 +630,6 @@ async function reportTabSwitch() {
                 },
 
                 body: JSON.stringify({
-                    student_id:
-                        "STUDENT_001",
-
                     event:
                         "TAB_SWITCH",
 
@@ -1486,12 +1483,52 @@ async function submitExam() {
 
         }
 
-        /*
-         * Return to the student dashboard after the
-         * MySQL submission has been successfully committed.
-         */
-        window.location.href =
-            "/student";
+/*
+ * The MySQL submission has been successfully committed.
+ *
+ * Now stop the LOCAL AI monitoring agent.
+ * This terminates live_monitor.py, releases the
+ * camera/microphone, and stops the video relay.
+ */
+try {
+    await fetch(
+        "http://127.0.0.1:8765/stop",
+        {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({})
+        }
+    );
+
+    console.log(
+        "PROCTIFY monitoring stopped after exam submission."
+    );
+
+} catch (stopError) {
+
+    /*
+     * Do not mark the exam submission as failed
+     * if the local agent is already stopped or
+     * temporarily unreachable.
+     */
+    console.warn(
+        "Unable to contact local monitoring agent:",
+        stopError
+    );
+}
+
+/*
+ * Give the agent a moment to terminate the monitor
+ * before returning to the student dashboard.
+ */
+await new Promise(
+    resolve => setTimeout(resolve, 500)
+);
+
+window.location.href =
+    "/student";
 
     }
 

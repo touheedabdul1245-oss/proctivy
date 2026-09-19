@@ -82,6 +82,11 @@
             color: #77776f;
         }
 
+        .exam-status.scheduled {
+            background: #e6efff;
+            color: #3a5fa8;
+        }
+
         .exam-name {
             font-size: 18px;
             font-weight: 700;
@@ -113,6 +118,8 @@
         .exam-actions {
             display: flex;
             justify-content: flex-end;
+            gap: 8px;
+            flex-wrap: wrap;
             margin-top: 20px;
         }
 
@@ -127,8 +134,23 @@
             cursor: pointer;
         }
 
+        .view-exam-btn.secondary {
+            background: #ecece7;
+            color: #292927;
+        }
+
+        .view-exam-btn.danger {
+            background: #b8342c;
+            color: #fff;
+        }
+
         .view-exam-btn:hover {
             transform: translateY(-1px);
+        }
+
+        .exam-status.expired {
+            background: #f7e3e1;
+            color: #a1221c;
         }
 
         .empty-exams {
@@ -176,7 +198,7 @@
             </h1>
 
             <p class="subtitle">
-                View examinations created in PROCTIFY.
+                Create, review, clear and delete examinations.
             </p>
 
         </div>
@@ -184,10 +206,17 @@
 
         <div class="top-right">
 
-            <div class="live-pill">
-                <span class="live-dot"></span>
-                PROCTIFY
-            </div>
+            <a class="view-exam-btn secondary"
+               href="/teacher"
+               style="text-decoration:none;display:inline-flex;align-items:center">
+                ← Dashboard
+            </a>
+
+            <a class="view-exam-btn"
+               href="/host-exam"
+               style="text-decoration:none;display:inline-flex;align-items:center;margin-left:8px">
+                + Host Exam
+            </a>
 
         </div>
 
@@ -312,14 +341,18 @@ async function loadExams() {
                 const status =
                     String(
                         exam.status ||
-                        "ACTIVE"
+                        "UNKNOWN"
                     ).toUpperCase();
 
 
                 const statusClass =
                     status === "ACTIVE"
                         ? "active"
-                        : "completed";
+                        : status === "COMPLETED"
+                            ? "completed"
+                            : status === "EXPIRED"
+                                ? "expired"
+                                : "scheduled";
 
 
                 card.innerHTML = `
@@ -381,10 +414,61 @@ async function loadExams() {
 
                         </div>
 
+
+                        <div class="exam-meta-item">
+
+                            <strong>
+                                ${exam.assigned_count || 0}
+                            </strong>
+
+                            assigned
+
+                        </div>
+
+
+                        <div class="exam-meta-item">
+
+                            <strong>
+                                ${exam.submission_count || 0}
+                            </strong>
+
+                            submitted
+
+                        </div>
+
                     </div>
 
 
                     <div class="exam-actions">
+
+                        <button
+                            class="view-exam-btn secondary"
+                            onclick="clearExamData(
+                                '${escapeJS(
+                                    exam.exam_id
+                                )}'
+                            )">
+
+                            Clear Data
+
+                        </button>
+
+
+                        <button
+                            class="view-exam-btn danger"
+                            onclick="deleteExam(
+                                '${escapeJS(
+                                    exam.exam_id
+                                )}',
+                                '${escapeJS(
+                                    exam.exam_name || ""
+                                )}'
+                            )">
+
+                            Delete
+
+                        </button>
+
 
                         <button
                             class="view-exam-btn"
@@ -455,6 +539,117 @@ function viewExam(examId) {
         encodeURIComponent(
             examId
         );
+
+}
+
+
+/* =========================================================
+   DELETE EXAM
+   Removes the exam plus every session, violation, evidence
+   image and submission it produced.
+========================================================= */
+
+async function deleteExam(examId, examName) {
+
+    if (!examId) return;
+
+    const confirmed = window.confirm(
+        "Delete \"" + (examName || examId) + "\"?\n\n" +
+        "This permanently removes the exam, its assignments, every " +
+        "monitoring session, all violations, all evidence images and " +
+        "all submissions for this exam."
+    );
+
+    if (!confirmed) return;
+
+    try {
+
+        const response = await fetch(
+            "/api/exams/" + encodeURIComponent(examId),
+            { method: "DELETE" }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+
+            throw new Error(data.error || "Unable to delete exam");
+
+        }
+
+        const removed = data.deleted || {};
+
+        window.alert(
+            "Exam deleted.\n\n" +
+            "Sessions: " + (removed.sessions || 0) + "\n" +
+            "Violations: " + (removed.violations || 0) + "\n" +
+            "Evidence: " + (removed.evidence || 0) + "\n" +
+            "Evidence images: " + (removed.files || 0) + "\n" +
+            "Submissions: " + (removed.submissions || 0)
+        );
+
+        loadExams();
+
+    }
+
+    catch (error) {
+
+        window.alert(error.message);
+
+    }
+
+}
+
+
+/* =========================================================
+   CLEAR EXAM DATA
+   Keeps the exam, wipes only what was recorded during it.
+========================================================= */
+
+async function clearExamData(examId) {
+
+    if (!examId) return;
+
+    if (!window.confirm(
+        "Clear all recorded data (sessions, violations, evidence " +
+        "images and submissions) for this exam?\n\nThe exam itself " +
+        "is kept."
+    )) return;
+
+    try {
+
+        const response = await fetch(
+            "/api/exams/" + encodeURIComponent(examId) + "/clear-data",
+            { method: "POST" }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+
+            throw new Error(data.error || "Unable to clear exam data");
+
+        }
+
+        const cleared = data.cleared || {};
+
+        window.alert(
+            "Exam data cleared.\n\n" +
+            "Sessions: " + (cleared.sessions || 0) + "\n" +
+            "Violations: " + (cleared.violations || 0) + "\n" +
+            "Evidence: " + (cleared.evidence || 0) + "\n" +
+            "Submissions: " + (cleared.submissions || 0)
+        );
+
+        loadExams();
+
+    }
+
+    catch (error) {
+
+        window.alert(error.message);
+
+    }
 
 }
 

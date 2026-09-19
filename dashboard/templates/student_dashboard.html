@@ -253,6 +253,40 @@
             background: rgba(255,255,255,.45);
         }
 
+        /* =====================================================
+           FACE VERIFICATION / SIGN OUT CHIPS
+        ===================================================== */
+
+        .face-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-left: 10px;
+            padding: 9px 13px;
+            border: 1px solid rgba(0,0,0,.12);
+            border-radius: 999px;
+            background: #fff;
+            color: #292927;
+            font-family: inherit;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: .08em;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .face-chip.verified {
+            background: #e2ede9;
+            color: #2f6b55;
+            border-color: transparent;
+        }
+
+        .face-chip.signout {
+            background: #292927;
+            color: #fff;
+            border-color: transparent;
+        }
+
         .empty-icon {
             width: 45px;
             height: 45px;
@@ -367,6 +401,31 @@
 
             </div>
 
+
+            {% if face_verified %}
+
+            <span class="face-chip verified">
+                ✓ FACE VERIFIED
+            </span>
+
+            {% else %}
+
+            <a class="face-chip" href="/student/verify">
+                VERIFY FACE
+            </a>
+
+            {% endif %}
+
+
+            <button
+                type="button"
+                class="face-chip signout"
+                onclick="studentLogout()">
+
+                SIGN OUT
+
+            </button>
+
         </div>
 
     </header>
@@ -470,6 +529,31 @@ lucide.createIcons();
 /* =========================================================
    LOAD AVAILABLE EXAMS
 ========================================================= */
+
+/* =========================================================
+   SIGN OUT
+========================================================= */
+
+async function studentLogout() {
+
+    try {
+
+        await fetch("/api/student/logout", { method: "POST" });
+
+        sessionStorage.clear();
+
+    }
+
+    catch (error) {
+
+        console.log("Student logout error:", error);
+
+    }
+
+    window.location.href = "/";
+
+}
+
 
 async function loadStudentExams() {
 

@@ -76,9 +76,12 @@ DB_CONFIG = {
 # In the final architecture the Student PC never connects directly
 # to MySQL. The monitoring engine sends monitoring data to the central
 # PROCTIFY server, and the server writes to MySQL.
+# Default to the central PROCTIFY server on this machine. Point it at
+# a tunnel/remote host for multi-PC exams. Setting this to an empty
+# string forces the legacy direct-to-MySQL mode.
 PROCTIFY_SERVER_URL = os.getenv(
     "PROCTIFY_SERVER_URL",
-    ""
+    "http://127.0.0.1:5000"
 ).strip().rstrip("/")
 
 PROCTIFY_API_TIMEOUT = float(os.getenv(
@@ -187,6 +190,13 @@ class MonitoringEngine:
 
         self.violation_count = 0
 
+        # Set to True the moment the Trust Score reaches 0. The live
+        # monitor loop watches this flag and shuts itself down, which
+        # stops the student's camera and the teacher's live feed.
+        self.terminated = False
+
+        self.termination_reason = None
+
         # Exact violation associated with the next evidence image.
         # This prevents evidence from being linked to another student's
         # or another concurrent violation when multiple students are live.
@@ -282,6 +292,8 @@ class MonitoringEngine:
                 print("========================================")
                 print()
 
+                self._maybe_terminate()
+
                 return violation_id
 
             except Exception as error:
@@ -341,6 +353,9 @@ class MonitoringEngine:
             ))
 
             connection.commit()
+
+            self._maybe_terminate()
+
             return violation_id
 
         except mysql.connector.Error as error:
@@ -658,6 +673,108 @@ class MonitoringEngine:
 
 
     # ========================================================
+    # AUTOMATIC TERMINATION AT TRUST SCORE 0
+    # ========================================================
+
+    def is_terminated(self):
+
+        return bool(self.terminated)
+
+
+    def _maybe_terminate(self):
+        """
+        Once the Trust Score reaches zero the session is over:
+
+          1. the session is persisted as TERMINATED,
+          2. the teacher's live feed is stopped by the server,
+          3. a report is generated for the teacher.
+        """
+
+        if self.terminated:
+
+            return False
+
+        if int(self.trust_score) > 0:
+
+            return False
+
+        self.terminated = True
+
+        self.termination_reason = "TRUST_SCORE_REACHED_ZERO"
+
+        print()
+        print("========================================")
+        print("PROCTIFY SESSION TERMINATED")
+        print("========================================")
+        print("Trust Score reached 0 - monitoring stops.")
+        print(f"Student: {self.student_id}")
+        print(f"Session: {self.session_id}")
+        print("========================================")
+        print()
+
+        return self.terminate_session()
+
+
+    def terminate_session(self):
+        """
+        Tell the central server to terminate the session.
+
+        The server marks the session TERMINATED, drops the buffered
+        live frames (so the teacher's feed stops immediately) and
+        writes the session report.
+
+        In local (non-cloud) mode the same state is written directly
+        to MySQL and the report is written to reports/.
+        """
+
+        if CLOUD_MODE:
+
+            try:
+
+                response = requests.post(
+                    f"{PROCTIFY_SERVER_URL}/api/monitor/terminate",
+                    json={
+                        "session_id": self.session_id,
+                        "student_id": self.student_id,
+                        "exam_name": self.exam_name,
+                        "final_trust_score": int(self.trust_score),
+                        "final_risk_level": self.get_risk_level()
+                    },
+                    timeout=PROCTIFY_API_TIMEOUT
+                )
+
+                response.raise_for_status()
+
+                data = response.json()
+
+                print(
+                    "Central termination accepted. Report:",
+                    data.get("report_path")
+                )
+
+                return True
+
+            except Exception as error:
+
+                print("CENTRAL TERMINATION ERROR:", error)
+
+                return False
+
+        # ----------------------------------------------------
+        # LOCAL MODE
+        # ----------------------------------------------------
+
+        self.save_completed_exam_session(
+            datetime.now(),
+            status="TERMINATED"
+        )
+
+        self.generate_report(terminated=True)
+
+        return True
+
+
+    # ========================================================
     # GET TRUST SCORE
     # ========================================================
 
@@ -827,8 +944,14 @@ class MonitoringEngine:
 
     def save_completed_exam_session(
         self,
-        end_time
+        end_time,
+        status="COMPLETED"
     ):
+
+        status = str(status).upper()
+
+        if status not in ("COMPLETED", "TERMINATED"):
+            status = "COMPLETED"
 
         payload = {
             "session_id": self.session_id,
@@ -836,6 +959,7 @@ class MonitoringEngine:
             "exam_name": self.exam_name,
             "start_time": self.start_time.strftime("%Y-%m-%d %H:%M:%S"),
             "end_time": end_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "status": status,
             "final_trust_score": int(self.get_trust_score()),
             "final_risk_level": str(self.get_risk_level())
         }
@@ -879,7 +1003,7 @@ class MonitoringEngine:
                 VALUES
                 (
                     %s, %s, %s, %s, %s,
-                    'COMPLETED',
+                    %s,
                     %s, %s
                 )
                 ON DUPLICATE KEY UPDATE
@@ -887,7 +1011,7 @@ class MonitoringEngine:
                     exam_name = VALUES(exam_name),
                     start_time = VALUES(start_time),
                     end_time = VALUES(end_time),
-                    status = 'COMPLETED',
+                    status = VALUES(status),
                     final_trust_score = VALUES(final_trust_score),
                     final_risk_level = VALUES(final_risk_level)
             """, (
@@ -896,6 +1020,7 @@ class MonitoringEngine:
                 self.exam_name,
                 self.start_time,
                 end_time,
+                status,
                 int(self.get_trust_score()),
                 str(self.get_risk_level())
             ))
@@ -921,15 +1046,17 @@ class MonitoringEngine:
     # GENERATE SESSION REPORT
     # ========================================================
 
-    def generate_report(self):
+    def generate_report(self, terminated=False):
 
         end_time = datetime.now()
+
+        report_status = "TERMINATED" if terminated else "COMPLETED"
 
         if CLOUD_MODE:
             try:
                 # Ensure the completed session is persisted in MySQL before
                 # the central report is generated.
-                self.save_completed_exam_session(end_time)
+                self.save_completed_exam_session(end_time, status=report_status)
 
                 response = requests.post(
                     f"{PROCTIFY_SERVER_URL}/api/monitor/report",
@@ -948,6 +1075,9 @@ class MonitoringEngine:
                             2
                         ),
                         "cheating_score": int(self.cheating_score),
+                        "status": report_status,
+                        "terminated": bool(terminated),
+                        "termination_reason": self.termination_reason,
                         "final_trust_score": int(self.trust_score),
                         "final_risk_level": self.get_risk_level()
                     },
@@ -973,7 +1103,7 @@ class MonitoringEngine:
                 print("CENTRAL SERVER REPORT ERROR:", error)
                 return None
 
-        self.save_completed_exam_session(end_time)
+        self.save_completed_exam_session(end_time, status=report_status)
 
         violations = self.get_session_violations()
         evidence = self.get_session_evidence()
@@ -990,6 +1120,11 @@ class MonitoringEngine:
         report_data = {
             "system": "PROCTIFY",
             "session_id": self.session_id,
+            "student_id": self.student_id,
+            "exam_name": self.exam_name,
+            "status": report_status,
+            "terminated": bool(terminated),
+            "termination_reason": self.termination_reason,
             "start_time": self.start_time.strftime(
                 "%Y-%m-%d %H:%M:%S"
             ),

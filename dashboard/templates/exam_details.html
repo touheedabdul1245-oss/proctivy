@@ -334,6 +334,74 @@
 
 
             <!-- =================================================
+                 BULK ASSIGN STUDENTS (EXCEL)
+            ================================================== -->
+
+            <div style="
+                margin-top: 22px;
+                padding: 20px;
+                border: 1px dashed #cbd5e1;
+                border-radius: 18px;
+                background: #f8fafc;
+                display: grid;
+                gap: 12px;
+            ">
+
+                <div>
+                    <strong style="font-size: 14px;">
+                        Bulk assign students from Excel
+                    </strong>
+                    <div style="
+                        font-size: 12px;
+                        color: #64748b;
+                        margin-top: 4px;
+                    ">
+                        Upload a .xlsx file with a
+                        <code>student_id</code> column.
+                        Unknown student IDs are skipped and reported.
+                    </div>
+                </div>
+
+                <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+                    <input
+                        type="file"
+                        id="assignExcelInput"
+                        accept=".xlsx"
+                        style="display:none;"
+                    >
+                    <button
+                        type="button"
+                        id="assignExcelButton"
+                        style="
+                            padding: 10px 18px;
+                            border: 0;
+                            border-radius: 12px;
+                            background: #0f172a;
+                            color: #fff;
+                            font-weight: 700;
+                            cursor: pointer;
+                        "
+                        onclick="assignExamExcel()"
+                    >
+                        Upload .xlsx
+                    </button>
+                    <a
+                        href="/api/excel/assignment-template"
+                        download
+                        style="font-size: 12px; color: #0f766e;"
+                    >
+                        Download template
+                    </a>
+                </div>
+
+                <div id="assignExcelMessage"
+                     style="min-height:18px; font-size:13px;">
+                </div>
+
+            </div>
+
+
+            <!-- =================================================
                  QUESTIONS
             ================================================== -->
 
@@ -346,13 +414,37 @@
             </div>
 
 
-            <button
-                class="back-button"
-                onclick="window.location.href='/exams'">
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
 
-                ← Back to Exams
+                <button
+                    class="back-button"
+                    onclick="window.location.href='/exams'">
 
-            </button>
+                    ← Back to Exams
+
+                </button>
+
+                <button
+                    class="back-button"
+                    id="clearDataButton"
+                    style="background:#3f3f3a;"
+                    onclick="clearExamData()">
+
+                    Clear Recorded Data
+
+                </button>
+
+                <button
+                    class="back-button"
+                    id="deleteExamButton"
+                    style="background:#b8342c;"
+                    onclick="deleteExam()">
+
+                    Delete Exam
+
+                </button>
+
+            </div>
 
         </section>
 
@@ -686,6 +778,211 @@ function escapeHTML(value) {
             /'/g,
             "&#039;"
         );
+
+}
+
+
+/* =========================================================
+   BULK ASSIGN STUDENTS (EXCEL)
+========================================================= */
+
+async function assignExamExcel() {
+
+    const fileInput =
+        document.getElementById(
+            "assignExcelInput"
+        );
+
+    const message =
+        document.getElementById(
+            "assignExcelMessage"
+        );
+
+    const button =
+        document.getElementById(
+            "assignExcelButton"
+        );
+
+    if (!fileInput) {
+        return;
+    }
+
+    if (fileInput.files.length === 0) {
+        fileInput.click();
+        return;
+    }
+
+    const file = fileInput.files[0];
+
+    if (!file.name.toLowerCase().endsWith(".xlsx")) {
+        if (message) {
+            message.innerText =
+                "Please choose a .xlsx file.";
+            message.style.color = "#dc2626";
+        }
+        return;
+    }
+
+    if (button) {
+        button.disabled = true;
+        button.innerText = "Uploading...";
+    }
+
+    try {
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const response = await fetch(
+            "/api/exams/" +
+            encodeURIComponent(examId) +
+            "/assign/excel",
+            {
+                method: "POST",
+                body: formData
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            message.innerText =
+                data.error || "Assignment failed.";
+            message.style.color = "#dc2626";
+            return;
+        }
+
+        const unknownText =
+            Array.isArray(data.unknown) &&
+            data.unknown.length > 0
+                ? " Unknown IDs: " + data.unknown.join(", ")
+                : "";
+
+        message.innerText =
+            "Assigned " +
+            data.assigned +
+            " student(s)." +
+            unknownText;
+
+        message.style.color =
+            data.assigned > 0
+                ? "#16a34a"
+                : "#d97706";
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Excel assignment error:",
+            error
+        );
+
+        message.innerText =
+            error.message;
+        message.style.color = "#dc2626";
+
+    }
+
+    finally {
+
+        if (button) {
+            button.disabled = false;
+            button.innerText = "Upload .xlsx";
+        }
+
+        if (fileInput) {
+            fileInput.value = "";
+        }
+
+    }
+
+}
+
+
+/* =========================================================
+   DELETE EXAM
+========================================================= */
+
+async function deleteExam() {
+
+    if (!window.confirm(
+        "Delete this exam and EVERYTHING it recorded " +
+        "(sessions, violations, evidence images, submissions)?\n\n" +
+        "This cannot be undone."
+    )) return;
+
+    try {
+
+        const response = await fetch(
+            "/api/exams/" + encodeURIComponent(examId),
+            { method: "DELETE" }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || "Unable to delete exam");
+        }
+
+        window.alert("Exam deleted.");
+
+        window.location.href = "/exams";
+
+    }
+
+    catch (error) {
+
+        window.alert(error.message);
+
+    }
+
+}
+
+
+/* =========================================================
+   CLEAR RECORDED DATA (exam is kept)
+========================================================= */
+
+async function clearExamData() {
+
+    if (!window.confirm(
+        "Clear every monitoring session, violation, evidence image " +
+        "and submission for this exam?\n\nThe exam itself is kept."
+    )) return;
+
+    try {
+
+        const response = await fetch(
+            "/api/exams/" + encodeURIComponent(examId) + "/clear-data",
+            { method: "POST" }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || "Unable to clear exam data");
+        }
+
+        const cleared = data.cleared || {};
+
+        window.alert(
+            "Recorded data cleared.\n\n" +
+            "Sessions: " + (cleared.sessions || 0) + "\n" +
+            "Violations: " + (cleared.violations || 0) + "\n" +
+            "Evidence: " + (cleared.evidence || 0) + "\n" +
+            "Submissions: " + (cleared.submissions || 0)
+        );
+
+        loadExam();
+
+    }
+
+    catch (error) {
+
+        window.alert(error.message);
+
+    }
 
 }
 

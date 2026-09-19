@@ -40,9 +40,11 @@ from monitoring.monitoring_engine import MonitoringEngine
 # CENTRAL SERVER CONFIGURATION
 # ============================================================
 
+# Defaults to the central server on this machine. Set it to an empty
+# string to force the legacy direct-to-MySQL mode.
 PROCTIFY_SERVER_URL = os.getenv(
     "PROCTIFY_SERVER_URL",
-    ""
+    "http://127.0.0.1:5000"
 ).strip().rstrip("/")
 
 if PROCTIFY_SERVER_URL:
@@ -228,6 +230,8 @@ def update_live_status(
     status="ONLINE"
 ):
 
+    global live_status_payload
+
     trust_score = int(
         monitoring_engine.get_trust_score()
     )
@@ -260,54 +264,79 @@ def update_live_status(
     )
 
 
-    try:
+    # --------------------------------------------------------
+    # Store the newest status only.
+    # The background worker sends it to the central server.
+    # The camera/AI loop NEVER waits for HTTPS here.
+    # --------------------------------------------------------
 
-        monitoring_engine.update_live_student(
+    payload = {
 
-            student_id=STUDENT_ID,
+        "student_id": STUDENT_ID,
 
-            exam_name=EXAM_NAME,
+        "exam_name": EXAM_NAME,
 
-            status=status,
+        "status": status,
 
-            phone=bool(phone_count > 0),
+        "phone": bool(
+            phone_count > 0
+        ),
 
-            phone_count=int(phone_count),
+        "phone_count": int(
+            phone_count
+        ),
 
-            person_count=int(person_count),
+        "person_count": int(
+            person_count
+        ),
 
-            face_count=int(face_count),
+        "face_count": int(
+            face_count
+        ),
 
-            hand_count=int(hand_count),
+        "hand_count": int(
+            hand_count
+        ),
 
-            gaze=str(gaze),
+        "gaze": str(
+            gaze
+        ),
 
-            head_direction=str(head_direction),
+        "head_direction": str(
+            head_direction
+        ),
 
-            audio=str(audio_text),
+        "audio": str(
+            audio_text
+        ),
 
-            audio_volume=float(audio_volume),
+        "audio_volume": float(
+            audio_volume
+        ),
 
-            camera_available=camera_available,
+        "camera_available":
+            camera_available,
 
-            audio_available=audio_ready,
+        "audio_available":
+            audio_ready,
 
-            ai_available=ai_ready,
+        "ai_available":
+            ai_ready,
 
-            tab_available=tab_available,
+        "tab_available":
+            tab_available,
 
-            trust_score=trust_score,
+        "trust_score":
+            trust_score,
 
-            risk_level=risk_level
+        "risk_level":
+            risk_level
+    }
 
-        )
 
-    except Exception as error:
+    with live_status_lock:
 
-        print()
-        print("MYSQL LIVE STUDENT UPDATE ERROR:")
-        print(error)
-        print()
+        live_status_payload = payload
 
 
 # ============================================================
@@ -316,6 +345,14 @@ def update_live_status(
 
 def mark_student_offline():
 
+    # A terminated session must stay TERMINATED. Overwriting it with
+    # OFFLINE here would hide the termination from the teacher.
+    final_status = (
+        "TERMINATED"
+        if monitoring_engine.is_terminated()
+        else "OFFLINE"
+    )
+
     try:
 
         monitoring_engine.update_live_student(
@@ -324,7 +361,7 @@ def mark_student_offline():
 
             exam_name=EXAM_NAME,
 
-            status="OFFLINE",
+            status=final_status,
 
             phone=False,
 
@@ -363,7 +400,7 @@ def mark_student_offline():
         )
 
         print(
-            "Student marked OFFLINE in MySQL."
+            f"Student marked {final_status} in the database."
         )
 
     except Exception as error:
@@ -460,28 +497,48 @@ print(
 # HAND LANDMARKER
 # ============================================================
 
-hand_options = HandLandmarkerOptions(
+# Hand detection is optional. If the model file is absent the monitor
+# still runs (hand_count simply stays 0) instead of crashing at startup.
+HAND_MODEL_AVAILABLE = os.path.isfile(HAND_MODEL_PATH)
 
-    base_options=BaseOptions(
-        model_asset_path=HAND_MODEL_PATH
-    ),
+hand_landmarker = None
 
-    running_mode=VisionRunningMode.IMAGE,
+if HAND_MODEL_AVAILABLE:
 
-    num_hands=2
-)
+    hand_options = HandLandmarkerOptions(
 
+        base_options=BaseOptions(
+            model_asset_path=HAND_MODEL_PATH
+        ),
 
-hand_landmarker = (
-    HandLandmarker.create_from_options(
-        hand_options
+        running_mode=VisionRunningMode.IMAGE,
+
+        num_hands=2
     )
-)
 
+    hand_landmarker = (
+        HandLandmarker.create_from_options(
+            hand_options
+        )
+    )
 
-print(
-    "Hand landmarker loaded successfully."
-)
+    print(
+        "Hand landmarker loaded successfully."
+    )
+
+else:
+
+    print()
+    print(
+        "WARNING: hand_landmarker.task not found."
+    )
+    print(
+        "         Hand detection is disabled; monitoring continues."
+    )
+    print(
+        f"         Expected at: {HAND_MODEL_PATH}"
+    )
+    print()
 
 
 # ============================================================
@@ -490,8 +547,8 @@ print(
 
 SAMPLE_RATE = 48000
 CHANNELS = 1
-SPEECH_THRESHOLD = 0.0025
-VIOLATION_TIME = 1.5
+SPEECH_THRESHOLD = 0.001
+VIOLATION_TIME = 2.0
 
 
 # ============================================================
@@ -1085,45 +1142,72 @@ CAMERA_AVAILABLE = True
 
 
 # ============================================================
-# LIVE VIDEO STREAM SERVER
+# LIVE VIDEO SERVER
 # ============================================================
+# IMPORTANT:
+# The AI loop encodes each processed frame ONCE.
+# The browser/Student Agent only reads the already encoded JPEG.
+# This avoids repeatedly calling cv2.imencode() inside an
+# infinite MJPEG generator and keeps the CPU free for AI.
 
 video_app = Flask("proctify_live_video")
 
 latest_frame = None
+latest_jpeg = None
+
 frame_lock = threading.Lock()
+
+
+@video_app.route("/latest_frame")
+def latest_frame_route():
+
+    with frame_lock:
+
+        if latest_jpeg is None:
+            return Response(
+                b"",
+                status=204,
+                mimetype="image/jpeg"
+            )
+
+        return Response(
+            latest_jpeg,
+            mimetype="image/jpeg",
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache"
+            }
+        )
 
 
 @video_app.route("/video_feed")
 def video_feed():
 
+    # Kept for local testing / compatibility.
+    # It sends the already encoded latest JPEG instead of
+    # encoding the frame repeatedly.
     def generate():
-
-        global latest_frame
 
         while True:
 
             with frame_lock:
 
-                if latest_frame is None:
-                    continue
+                jpeg = latest_jpeg
 
-                success, buffer = cv2.imencode(
-                    ".jpg",
-                    latest_frame
-                )
+            if jpeg is None:
 
-                if not success:
-                    continue
-
-                frame_bytes = buffer.tobytes()
+                time.sleep(0.05)
+                continue
 
             yield (
                 b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n"
-                + frame_bytes
+                b"Content-Type: image/jpeg\r\n"
+                b"Cache-Control: no-cache\r\n\r\n"
+                + jpeg
                 + b"\r\n"
             )
+
+            time.sleep(0.15)
 
     return Response(
         generate(),
@@ -1141,7 +1225,6 @@ def start_video_server():
         )
 
         if student_match is None:
-
             raise ValueError(
                 "Student ID has no trailing number."
             )
@@ -1155,12 +1238,25 @@ def start_video_server():
         student_number = 1
 
 
-    video_port = 5000 + student_number
+    video_port = (
+        int(
+            os.environ.get(
+                "PROCTIFY_VIDEO_PORT_BASE",
+                "5000"
+            )
+        )
+        + student_number
+    )
 
 
     print(
         f"Student video server:"
         f" http://127.0.0.1:{video_port}/video_feed"
+    )
+
+    print(
+        f"Latest JPEG endpoint:"
+        f" http://127.0.0.1:{video_port}/latest_frame"
     )
 
 
@@ -1174,11 +1270,7 @@ def start_video_server():
         )
 
         print(
-            "Live video stream available."
-        )
-
-        print(
-            "Student-specific video port is assigned automatically."
+            "Live video server started."
         )
 
         server.serve_forever()
@@ -1200,12 +1292,94 @@ video_server_thread.start()
 
 
 print(
-    "Live video stream available."
+    "Live video server starting..."
 )
 
 print(
     "Student-specific video port is assigned automatically."
 )
+
+
+# ============================================================
+# ASYNCHRONOUS LIVE STATUS UPDATES
+# ============================================================
+# DO NOT make the AI camera loop wait for an HTTPS request.
+# The latest status is stored here and one background worker
+# sends it to the central server.
+
+live_status_payload = None
+live_status_lock = threading.Lock()
+live_status_stop_event = threading.Event()
+live_status_thread = None
+
+LIVE_STATUS_INTERVAL = 1.0
+
+
+def live_status_worker():
+
+    while not live_status_stop_event.is_set():
+
+        payload = None
+
+        with live_status_lock:
+
+            if live_status_payload is not None:
+                payload = dict(live_status_payload)
+
+        if payload is not None:
+
+            try:
+
+                monitoring_engine.update_live_student(
+                    **payload
+                )
+
+            except Exception as error:
+
+                print(
+                    "LIVE STATUS WORKER ERROR:",
+                    error
+                )
+
+        live_status_stop_event.wait(
+            LIVE_STATUS_INTERVAL
+        )
+
+
+def start_live_status_worker():
+
+    global live_status_thread
+
+    live_status_stop_event.clear()
+
+    live_status_thread = threading.Thread(
+        target=live_status_worker,
+        daemon=True,
+        name="proctify-live-status-worker"
+    )
+
+    live_status_thread.start()
+
+
+def stop_live_status_worker():
+
+    global live_status_thread
+
+    live_status_stop_event.set()
+
+    if (
+        live_status_thread is not None
+        and live_status_thread.is_alive()
+    ):
+
+        live_status_thread.join(
+            timeout=2
+        )
+
+    live_status_thread = None
+
+
+start_live_status_worker()
 
 
 # ============================================================
@@ -2089,16 +2263,24 @@ try:
 
                 mp_image
             )
+
+            if hand_landmarker is not None
+
+            else None
         )
 
 
-        hand_count = len(
-            hand_result.hand_landmarks
+        hand_count = (
+            len(hand_result.hand_landmarks)
+            if hand_result is not None
+            else 0
         )
 
 
         for hand in (
             hand_result.hand_landmarks
+            if hand_result is not None
+            else []
         ):
 
             for landmark in hand:
@@ -2608,9 +2790,66 @@ try:
         # UPDATE BROWSER LIVE FRAME
         # ====================================================
 
-        with frame_lock:
+        # ====================================================
+        # ENCODE PROCESSED FRAME ONCE
+        # ====================================================
 
-            latest_frame = frame.copy()
+        success, encoded = cv2.imencode(
+            ".jpg",
+            frame,
+            [int(cv2.IMWRITE_JPEG_QUALITY), 75]
+        )
+
+        if success:
+
+            with frame_lock:
+
+                latest_frame = frame.copy()
+                latest_jpeg = encoded.tobytes()
+
+
+        # ====================================================
+        # TRUST SCORE REACHED ZERO
+        # ====================================================
+        # The monitoring engine has already persisted the session as
+        # TERMINATED and stopped the teacher's live feed. Publish one
+        # final status update and leave the loop so the camera and the
+        # microphone are released immediately.
+        # ====================================================
+
+        if monitoring_engine.is_terminated():
+
+            print()
+            print(
+                "========================================"
+            )
+            print(
+                "TRUST SCORE REACHED ZERO - STOPPING MONITOR"
+            )
+            print(
+                "========================================"
+            )
+            print()
+
+            update_live_status(
+                phone_count=phone_count,
+                person_count=person_count,
+                face_count=face_count,
+                hand_count=hand_count,
+                gaze=gaze,
+                head_direction=head_direction,
+                audio_text=audio_text,
+                audio_volume=current_volume,
+                eyes_closed=eyes_closed,
+                closed_duration=closed_duration,
+                yaw=yaw,
+                pitch=pitch,
+                calibration_complete=calibration_complete,
+                last_event="TRUST SCORE ZERO - TERMINATED",
+                status="TERMINATED"
+            )
+
+            break
 
 
         # ====================================================
@@ -2630,6 +2869,13 @@ finally:
     # ========================================================
 
     report_path = monitoring_engine.generate_report()
+
+    # ========================================================
+    # STOP ASYNCHRONOUS LIVE STATUS WORKER
+    # ========================================================
+
+    stop_live_status_worker()
+
 
     # ========================================================
     # MARK STUDENT OFFLINE
@@ -2653,7 +2899,9 @@ finally:
 
     face_landmarker.close()
 
-    hand_landmarker.close()
+    if hand_landmarker is not None:
+
+        hand_landmarker.close()
 
     cv2.destroyAllWindows()
 

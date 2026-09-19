@@ -237,6 +237,17 @@
             </button>
 
 
+            <button
+                id="enrollButton"
+                class="verify-button"
+                style="display:none; margin-top:10px; background:#3f3f3a;"
+                onclick="enrollFace()">
+
+                Enroll My Face (first time)
+
+            </button>
+
+
             <div class="verification-note">
 
                 Camera access is required for examination
@@ -267,6 +278,126 @@ const verifyButton =
     document.getElementById(
         "verifyButton"
     );
+
+const enrollButton =
+    document.getElementById(
+        "enrollButton"
+    );
+
+
+/* =========================================================
+   CAPTURE THE CURRENT CAMERA FRAME
+========================================================= */
+
+function captureFrame() {
+
+    const canvas =
+        document.createElement(
+            "canvas"
+        );
+
+    canvas.width =
+        video.videoWidth;
+
+    canvas.height =
+        video.videoHeight;
+
+    canvas
+        .getContext("2d")
+        .drawImage(
+            video,
+            0,
+            0,
+            canvas.width,
+            canvas.height
+        );
+
+    return canvas.toDataURL(
+        "image/jpeg",
+        0.85
+    );
+
+}
+
+
+/* =========================================================
+   FIRST-TIME FACE ENROLMENT
+   A new student has no stored profile yet, so the captured
+   frame becomes their reference image.
+========================================================= */
+
+async function enrollFace() {
+
+    if (!cameraStream) {
+
+        statusBox.innerText =
+            "Camera is not available.";
+
+        return;
+
+    }
+
+    enrollButton.disabled = true;
+
+    statusBox.classList.remove("ready", "error");
+
+    statusBox.innerText =
+        "Saving your face profile...";
+
+    try {
+
+        const response = await fetch(
+            "/api/student/enroll-face",
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ image: captureFrame() })
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+
+            throw new Error(
+                data.error || "Face enrolment failed."
+            );
+
+        }
+
+        statusBox.innerText =
+            "Face profile saved. You are verified.";
+
+        statusBox.classList.add("ready");
+
+        enrollButton.style.display = "none";
+
+        if (cameraStream) {
+
+            cameraStream
+                .getTracks()
+                .forEach(track => track.stop());
+
+        }
+
+        setTimeout(
+            function () { window.location.href = "/student"; },
+            800
+        );
+
+    }
+
+    catch (error) {
+
+        statusBox.innerText = error.message;
+
+        statusBox.classList.add("error");
+
+        enrollButton.disabled = false;
+
+    }
+
+}
 
 
 let cameraStream = null;
@@ -398,13 +529,15 @@ async function startVerification() {
 
 /*
  * Get the authenticated student's
- * real details from the login session.
+ * real details from the server session.
+ *
+ * The Flask session is the single source of truth for the
+ * student identity - it is never taken from sessionStorage
+ * or any other browser-only value that the student can edit.
  */
 
         const studentId =
-            sessionStorage.getItem(
-                "student_id"
-            );
+            "{{ student_id }}";
 
 
         /*
@@ -431,6 +564,9 @@ async function startVerification() {
 
         /*
          * Send camera frame to Flask.
+         *
+         * The backend reads the logged-in student from the
+         * server session, so no student_id is sent from here.
          */
 
         const response =
@@ -446,9 +582,6 @@ async function startVerification() {
                     },
 
                     body: JSON.stringify({
-
-                        student_id:
-                            studentId,
 
                         image:
                             image
@@ -523,6 +656,7 @@ async function startVerification() {
          */
 
         statusBox.innerText =
+            data.error ||
             data.message ||
             "Face verification failed. Please try again.";
 
@@ -533,6 +667,23 @@ async function startVerification() {
 
         verifyButton.disabled =
             false;
+
+
+        /*
+         * No profile stored yet: offer first-time enrolment
+         * instead of leaving the student stuck.
+         */
+
+        if (data.profile_missing && data.can_enroll) {
+
+            statusBox.innerText =
+                "No face profile is enrolled for this account yet. " +
+                "Capture one now to continue.";
+
+            enrollButton.style.display =
+                "inline-block";
+
+        }
 
     }
 

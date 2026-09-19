@@ -481,16 +481,83 @@ async function login() {
 
 
     /* =====================================================
-       TEACHER LOGIN
-       Existing behavior preserved
+       TEACHER LOGIN - MYSQL AUTHENTICATION
     ===================================================== */
 
     if (role === "teacher") {
 
-        window.location.href =
-            "/teacher";
+        try {
 
-        return;
+            const response =
+                await fetch(
+                    "/api/teacher/login",
+                    {
+
+                        method: "POST",
+
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body:
+                            JSON.stringify({
+
+                                username: userId,
+
+                                password: password
+
+                            })
+
+                    }
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (
+                !response.ok ||
+                data.success === false
+            ) {
+
+                message.innerText =
+                    data.error ||
+                    "Invalid teacher credentials.";
+
+                message.style.display =
+                    "block";
+
+                return;
+
+            }
+
+
+            window.location.href =
+                data.redirect || "/teacher";
+
+
+            return;
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "Teacher login error:",
+                error
+            );
+
+            message.innerText =
+                "Unable to connect to the authentication server.";
+
+            message.style.display =
+                "block";
+
+            return;
+
+        }
 
     }
 

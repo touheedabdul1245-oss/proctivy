@@ -2,11 +2,6 @@
 
 dataset/
 test_images/
-models/
-*.pt
-*.pth
-*.onnx
-__pycache__/
 *.pyc
 .vscode/
 .idea/
