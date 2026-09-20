@@ -363,13 +363,13 @@
 
 </div>
 <!-- =====================================================
-     ASSIGN STUDENTS
+     ASSIGN BATCHES & INDIVIDUAL STUDENTS
 ===================================================== -->
 
 <div class="form-group">
 
     <label>
-        Assign Students
+        Assign Batches
     </label>
 
     <p style="
@@ -377,7 +377,36 @@
         color: #64748b;
         margin: 5px 0 12px 0;
     ">
-        Select the students who can take this exam.
+        Select batches to assign this exam to ALL students in each batch.
+    </p>
+
+    <div
+        id="batchSelection"
+        style="
+            display: grid;
+            gap: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 5px;
+        "
+    >
+        Loading batches...
+    </div>
+
+</div>
+
+<div class="form-group">
+
+    <label>
+        Assign Individual Students
+    </label>
+
+    <p style="
+        font-size: 13px;
+        color: #64748b;
+        margin: 5px 0 12px 0;
+    ">
+        Only students not belonging to any batch appear here.
     </p>
 
     <div
@@ -385,12 +414,12 @@
         style="
             display: grid;
             gap: 10px;
-            max-height: 250px;
+            max-height: 200px;
             overflow-y: auto;
             padding: 5px;
         "
     >
-        Loading enrolled students...
+        Loading individual students...
     </div>
 
 </div>
@@ -909,11 +938,15 @@ async function startExam() {
     const selectedStudents =
         getSelectedStudents();
 
+    const selectedBatches =
+        getSelectedBatches();
 
-    if (selectedStudents.length === 0) {
+
+    if (selectedStudents.length === 0 &&
+        selectedBatches.length === 0) {
 
         alert(
-            "Please select at least one student."
+            "Please select at least one batch or individual student."
         );
 
         return;
@@ -939,7 +972,10 @@ async function startExam() {
             questions,
 
         selected_students:
-            selectedStudents
+            selectedStudents,
+
+        selected_batches:
+            selectedBatches
 
     };
 
@@ -981,16 +1017,17 @@ async function startExam() {
 
         if (result.success) {
 
+            const examId = result.exam.exam_id;
+
+            const totalAssigned =
+                result.assigned_count ||
+                selectedStudents.length;
+
             alert(
                 "Exam hosted successfully!\n\nExam ID: " +
-                result.exam.exam_id +
+                examId +
                 "\nAssigned students: " +
-                selectedStudents.length
-            );
-
-            console.log(
-                "PROCTIFY EXAM:",
-                result.exam
+                totalAssigned
             );
 
             window.location.href = "/teacher";
@@ -1027,7 +1064,111 @@ async function startExam() {
 
 }
 /* =====================================================
-   LOAD ENROLLED STUDENTS
+   LOAD BATCHES FOR ASSIGNMENT
+===================================================== */
+
+async function loadBatches() {
+
+    const container =
+        document.getElementById(
+            "batchSelection"
+        );
+
+    if (!container) return;
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/batches",
+                { cache: "no-store" }
+            );
+
+        const data =
+            await response.json();
+
+        if (
+            !response.ok ||
+            !data.success
+        ) {
+            container.innerHTML =
+                "No batches available.";
+            return;
+        }
+
+        const batches =
+            data.batches || [];
+
+        container.innerHTML = "";
+
+        if (batches.length === 0) {
+            container.innerHTML =
+                "No batches created yet. Upload an Excel file in Student Management first.";
+            return;
+        }
+
+        batches.forEach(function(batch) {
+
+            const item =
+                document.createElement("label");
+
+            item.style.display = "flex";
+            item.style.alignItems = "center";
+            item.style.gap = "10px";
+            item.style.padding = "12px";
+            item.style.border =
+                "1px solid #e2e8f0";
+            item.style.borderRadius = "10px";
+            item.style.cursor = "pointer";
+
+            item.innerHTML = `
+
+                <input
+                    type="checkbox"
+                    class="batch-checkbox"
+                    value="${batch.batch_id}"
+                >
+
+                <div style="flex:1;">
+
+                    <strong>
+                        ${escapeHTML(batch.batch_name)}
+                    </strong>
+
+                    <div style="
+                        font-size: 12px;
+                        color: #64748b;
+                    ">
+                        ${batch.student_count || 0} students
+                    </div>
+
+                </div>
+
+            `;
+
+            container.appendChild(item);
+
+        });
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Batch loading error:",
+            error
+        );
+
+        container.innerHTML =
+            "Unable to load batches.";
+
+    }
+
+}
+
+
+/* =====================================================
+   LOAD INDIVIDUAL STUDENTS (not in any batch)
 ===================================================== */
 
 async function loadStudents() {
@@ -1069,7 +1210,7 @@ async function loadStudents() {
         if (students.length === 0) {
 
             container.innerHTML =
-                "No enrolled students found.";
+                "No individual students found. All students may belong to batches.";
 
             return;
 
@@ -1158,11 +1299,35 @@ function getSelectedStudents() {
 }
 
 
-/* LOAD STUDENTS */
+function getSelectedBatches() {
+
+    const selected = [];
+
+    document
+        .querySelectorAll(
+            ".batch-checkbox:checked"
+        )
+        .forEach(function(checkbox) {
+
+            selected.push(
+                parseInt(checkbox.value)
+            );
+
+        });
+
+    return selected;
+
+}
+
+
+/* LOAD BATCHES AND STUDENTS */
 
 document.addEventListener(
     "DOMContentLoaded",
-    loadStudents
+    function() {
+        loadBatches();
+        loadStudents();
+    }
 );
 
 

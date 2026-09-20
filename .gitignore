@@ -1,18 +1,71 @@
-.venv/
+# ============================================
+# PROCTIFY .gitignore
+# ============================================
 
-dataset/
-test_images/
+# ---- Virtual Environment ----
+.venv/
+venv/
+env/
+
+# ---- Python Cache ----
+__pycache__/
 *.pyc
+*.pyo
+
+# ---- IDE Settings ----
 .vscode/
 .idea/
 
-database/*.db
+# ---- Test Scripts ----
+test_*.py
+test_*.js
+test_*.txt
+test_*.log
+*_test.py
 
-reports/
-runs/
+# ---- Development / One-off Utility Scripts ----
+add_*.py
+apply_*.py
+check_*.py
+fix_*.py
+modify_*.py
+read_*.py
+list_*.py
+simple_*.py
+split_*.py
+merge_*.py
+select_*.py
+collrct_*.py
+find_*.py
+gen_*.py
+evaluate_*.py
+enroll_student_face.py
+train_model.py
+audio_test.py
+gaze_test.py
+hand_test.py
+head_pose_test.py
+face_landmark_test.py
+face_presence_test.py
 
-shared_data/
-
+# ---- Server / Debug Logs ----
+server_error.txt
+server_output.txt
+test_output.txt
+test_log.txt
+test_results.txt
+run_tests.bat
 *.tmp
 
+# ---- Database ----
+database/
 
+# ---- Evaluation Test Images ----
+evaluation/
+
+# ---- Old Dataset (not dataset_phone_earphone) ----
+dataset/
+test_images/
+
+# ---- YOLO Weights (root-level, re-downloadable) ----
+*.pt

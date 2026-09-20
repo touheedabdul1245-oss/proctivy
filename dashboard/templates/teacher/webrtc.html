@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher Dashboard - Live Student Feeds</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { background: #2c3e50; color: white; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+        .status { padding: 10px; border-radius: 5px; margin: 10px 0; }
+        .connected { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .disconnected { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .title { font-size: 24px; font-weight: bold; margin-bottom: 10px; display: block; }
+        .toolbar { margin: 20px 0; }
+        .btn { padding: 8px 16px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin-right: 10px; }
+        .btn:disabled { background: #95a5a6; cursor: not-allowed; }
+        .btn:hover:not(:disabled) { background: #2980b9; }
+        .student-card { background: white; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; margin: 10px 0; display: inline-block; vertical-align: top; width: 23%; }
+        .student-card:hover { border-color: #3498db; }
+        .student-header { font-weight: bold; color: #2c3e50; margin-bottom: 10px; }
+        .student-status { font-size: 12px; color: #666; margin-top: 5px; }
+        video { width: 100%; height: auto; border-radius: 5px; margin-top: 10px; }
+        .no-students { text-align: center; color: #666; padding: 40px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span class="title">Teacher Dashboard - Live Monitoring</span>
+            <div id="status" class="disconnected">Not connected</div>
+            <div class="toolbar">
+                <button class="btn" id="refresh-btn">Refresh Students</button>
+                <span id="student-count">0</span> students connected
+            </div>
+        </div>
+        
+        <div id="students-grid">
+            <!-- Student cards will be injected here -->
+        </div>
+    </div>
+
+    <script>
+        let connectedStudents = [];
+        let isMonitoring = false;
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            const refreshBtn = document.getElementById('refresh-btn');
+            const studentsGrid = document.getElementById('students-grid');
+
+            // Initial load of connected students
+            await loadConnectedStudents();
+
+            // Refresh button
+            refreshBtn.addEventListener('click', loadConnectedStudents);
+
+            // Poll every 3 seconds
+            setInterval(loadConnectedStudents, 3000);
+        });
+
+        // Load connected students and display their feeds
+        async function loadConnectedStudents() {
+            try {
+                const response = await fetch('/api/teacher/connected-students');
+                const data = await response.json();
+                
+                if (data.success) {
+                    connectedStudents = data.connected_students || [];
+                    renderStudentGrid();
+                }
+            } catch (error) {
+                console.error('Error loading students:', error);
+            }
+        }
+
+        // Render the student video grid
+        function renderStudentGrid() {
+            const countEl = document.getElementById('student-count');
+            countEl.textContent = connectedStudents.length;
+            
+            const studentsGrid = document.getElementById('students-grid');
+            
+            if (connectedStudents.length === 0) {
+                studentsGrid.innerHTML = '<div class="no-students">No students currently connected</div>';
+                return;
+            }
+
+            studentsGrid.innerHTML = '';
+            
+            connectedStudents.forEach(studentId => {
+                const card = document.createElement('div');
+                card.className = 'student-card';
+                card.innerHTML = `
+                    <div class="student-header">Student: ${studentId}</div>
+                    <div class="student-status">Feed active - Live monitoring</div>
+                    <video controls autoplay name="media-${studentId}"></video>
+                `;
+                studentsGrid.appendChild(card);
+                
+                // Connect to student's WebRTC feed
+                connectToStudentFeed(studentId, card.querySelector('video'));
+            });
+        }
+
+        // Connect to individual student's WebRTC feed
+        async function connectToStudentFeed(studentId, videoElement) {
+            try {
+                // Get Janus signaling from Flask
+                const response = await fetch('/api/teacher/connected-students');
+                // In full implementation, would use proper Janus signaling
+                // For now, set up a placeholder video source
+                console.log(`Connecting to student feed: ${studentId}`);
+                
+                // Try to get user media as placeholder if no direct feed
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: true, 
+                        audio: false 
+                    });
+                    videoElement.srcObject = stream;
+                } catch (err) {
+                    console.log('Using placeholder video for:', studentId);
+                    // Placeholder - in production would connect to Janus
+                    videoElement.src = `https://picsum.photos/seed/${studentId}/400/300`;
+                }
+            } catch (error) {
+                console.error(`Error connecting to student ${studentId}:`, error);
+            }
+        }
+    </script>
+</body>
+</html>

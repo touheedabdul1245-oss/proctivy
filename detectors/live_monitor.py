@@ -2868,7 +2868,9 @@ finally:
     # GENERATE FINAL SESSION REPORT
     # ========================================================
 
-    report_path = monitoring_engine.generate_report()
+    report_path = monitoring_engine.generate_report(
+        terminated=monitoring_engine.is_terminated()
+    )
 
     # ========================================================
     # STOP ASYNCHRONOUS LIVE STATUS WORKER

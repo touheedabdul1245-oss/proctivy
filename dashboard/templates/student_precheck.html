@@ -618,7 +618,6 @@ const EXAM_NAME =
 const STUDENT_AGENT_URL =
     "{{ student_agent_url }}";
 
-
 let cameraReady = false;
 
 let microphoneReady = false;
@@ -628,8 +627,14 @@ let tabReady = false;
 let aiReady = false;
 
 let examReady = false;
+
 let monitorStarted = false;
+
 let agentData = null;
+
+let agentRetryCount = 0;
+
+let maxAgentRetries = 10;
 
 
 function isAvailable(value) {
@@ -794,35 +799,51 @@ async function startStudentAgent() {
 
     } catch (error) {
 
-        console.error(
-            "Student agent start error:",
-            error
-        );
-
-        monitorStarted = false;
+        agentRetryCount++;
 
         setStatus(
             "aiStatus",
-            "failed",
-            "✕ Agent Offline"
+            agentRetryCount >= maxAgentRetries ? "failed" : "checking",
+            agentRetryCount >= maxAgentRetries
+                ? "✕ Agent Offline (max retries reached)"
+                : "⟳ Retrying in 3 seconds..."
         );
 
         setStatus(
             "cameraStatus",
-            "failed",
-            "✕ Not Active"
+            agentRetryCount >= maxAgentRetries ? "failed" : "checking",
+            agentRetryCount >= maxAgentRetries
+                ? "✕ Not Active"
+                : "⟳ Retrying in 3 seconds..."
         );
 
         setStatus(
             "microphoneStatus",
-            "failed",
-            "✕ Not Active"
+            agentRetryCount >= maxAgentRetries ? "failed" : "checking",
+            agentRetryCount >= maxAgentRetries
+                ? "✕ Not Active"
+                : "⟳ Retrying in 3 seconds..."
         );
 
         document.getElementById(
             "message"
         ).innerText =
-            "PROCTIFY Agent is not running on this computer. Start the student agent and retry.";
+            agentRetryCount < maxAgentRetries
+                ? "PROCTIFY Agent is starting. Retrying in 3 seconds..."
+                : "PROCTIFY Agent is not running. Please ensure the student agent is running on this computer.";
+
+        if (agentRetryCount < maxAgentRetries) {
+
+            await new Promise(
+                resolve =>
+                    setTimeout(
+                        resolve,
+                        3000
+                    )
+            );
+
+            return await startStudentAgent();
+        }
 
         return false;
     }

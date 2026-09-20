@@ -1,0 +1,162 @@
+{
+    "system": "PROCTIFY",
+    "session_id": "SESSION_1789913170_12",
+    "student_id": "12",
+    "exam_name": "sc",
+    "start_time": "2026-09-20 19:36:31",
+    "end_time": "2026-09-20 19:39:21",
+    "duration_seconds": 170.08,
+    "cheating_score": 105,
+    "terminated": false,
+    "termination_reason": null,
+    "final_trust_score": 100,
+    "final_risk_level": "HIGH",
+    "total_violations": 11,
+    "total_evidence": 9,
+    "violations": [
+        {
+            "id": 2509,
+            "violation_type": "NO_FACE",
+            "severity": "MEDIUM",
+            "penalty": 10,
+            "description": "Student face not detected.",
+            "timestamp": "2026-09-20T19:37:13"
+        },
+        {
+            "id": 2510,
+            "violation_type": "PHONE_DETECTED",
+            "severity": "HIGH",
+            "penalty": 10,
+            "description": "Phone detected during examination.",
+            "timestamp": "2026-09-20T19:37:26"
+        },
+        {
+            "id": 2511,
+            "violation_type": "PHONE_DETECTED",
+            "severity": "HIGH",
+            "penalty": 10,
+            "description": "Phone detected during examination.",
+            "timestamp": "2026-09-20T19:37:33"
+        },
+        {
+            "id": 2512,
+            "violation_type": "EYES_CLOSED",
+            "severity": "MEDIUM",
+            "penalty": 5,
+            "description": "Eyes remained closed for extended duration.",
+            "timestamp": "2026-09-20T19:37:48"
+        },
+        {
+            "id": 2513,
+            "violation_type": "PHONE_DETECTED",
+            "severity": "HIGH",
+            "penalty": 10,
+            "description": "Phone detected during examination.",
+            "timestamp": "2026-09-20T19:38:25"
+        },
+        {
+            "id": 2514,
+            "violation_type": "PHONE_DETECTED",
+            "severity": "HIGH",
+            "penalty": 10,
+            "description": "Phone detected during examination.",
+            "timestamp": "2026-09-20T19:38:31"
+        },
+        {
+            "id": 2515,
+            "violation_type": "PHONE_DETECTED",
+            "severity": "HIGH",
+            "penalty": 10,
+            "description": "Phone detected during examination.",
+            "timestamp": "2026-09-20T19:38:37"
+        },
+        {
+            "id": 2516,
+            "violation_type": "PHONE_DETECTED",
+            "severity": "HIGH",
+            "penalty": 10,
+            "description": "Phone detected during examination.",
+            "timestamp": "2026-09-20T19:38:44"
+        },
+        {
+            "id": 2517,
+            "violation_type": "PHONE_DETECTED",
+            "severity": "HIGH",
+            "penalty": 10,
+            "description": "Phone detected during examination.",
+            "timestamp": "2026-09-20T19:38:51"
+        },
+        {
+            "id": 2518,
+            "violation_type": "PHONE_DETECTED",
+            "severity": "HIGH",
+            "penalty": 10,
+            "description": "Phone detected during examination.",
+            "timestamp": "2026-09-20T19:39:06"
+        },
+        {
+            "id": 2519,
+            "violation_type": "PHONE_DETECTED",
+            "severity": "HIGH",
+            "penalty": 10,
+            "description": "Phone detected during examination.",
+            "timestamp": "2026-09-20T19:39:14"
+        }
+    ],
+    "evidence": [
+        {
+            "id": 1346,
+            "violation_id": 2510,
+            "file_path": "C:\\Users\\touhe\\PROCTIFY_V2\\reports\\evidence\\PHONE_DETECTED_12_20260920_193730_900605.jpg",
+            "timestamp": "2026-09-20T19:37:30"
+        },
+        {
+            "id": 1347,
+            "violation_id": 2511,
+            "file_path": "C:\\Users\\touhe\\PROCTIFY_V2\\reports\\evidence\\PHONE_DETECTED_12_20260920_193738_907538.jpg",
+            "timestamp": "2026-09-20T19:37:38"
+        },
+        {
+            "id": 1348,
+            "violation_id": 2513,
+            "file_path": "C:\\Users\\touhe\\PROCTIFY_V2\\reports\\evidence\\PHONE_DETECTED_12_20260920_193828_829164.jpg",
+            "timestamp": "2026-09-20T19:38:28"
+        },
+        {
+            "id": 1349,
+            "violation_id": 2514,
+            "file_path": "C:\\Users\\touhe\\PROCTIFY_V2\\reports\\evidence\\PHONE_DETECTED_12_20260920_193835_543743.jpg",
+            "timestamp": "2026-09-20T19:38:35"
+        },
+        {
+            "id": 1350,
+            "violation_id": 2515,
+            "file_path": "C:\\Users\\touhe\\PROCTIFY_V2\\reports\\evidence\\PHONE_DETECTED_12_20260920_193842_269064.jpg",
+            "timestamp": "2026-09-20T19:38:42"
+        },
+        {
+            "id": 1351,
+            "violation_id": 2516,
+            "file_path": "C:\\Users\\touhe\\PROCTIFY_V2\\reports\\evidence\\PHONE_DETECTED_12_20260920_193849_314164.jpg",
+            "timestamp": "2026-09-20T19:38:49"
+        },
+        {
+            "id": 1352,
+            "violation_id": 2517,
+            "file_path": "C:\\Users\\touhe\\PROCTIFY_V2\\reports\\evidence\\PHONE_DETECTED_12_20260920_193856_980251.jpg",
+            "timestamp": "2026-09-20T19:38:57"
+        },
+        {
+            "id": 1353,
+            "violation_id": 2518,
+            "file_path": "C:\\Users\\touhe\\PROCTIFY_V2\\reports\\evidence\\PHONE_DETECTED_12_20260920_193912_020730.jpg",
+            "timestamp": "2026-09-20T19:39:12"
+        },
+        {
+            "id": 1354,
+            "violation_id": 2519,
+            "file_path": "C:\\Users\\touhe\\PROCTIFY_V2\\reports\\evidence\\PHONE_DETECTED_12_20260920_193921_303410.jpg",
+            "timestamp": "2026-09-20T19:39:21"
+        }
+    ]
+}

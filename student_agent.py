@@ -14,6 +14,7 @@ This version does NOT relay an infinite local MJPEG stream.
 That prevents local buffering and keeps CPU/network usage reasonable.
 """
 
+import argparse
 import os
 import sys
 import subprocess
@@ -38,6 +39,7 @@ LIVE_MONITOR_FILE = os.path.join(
     "live_monitor.py"
 )
 
+# Defaults — overridden by CLI args when present.
 AGENT_HOST = "127.0.0.1"
 AGENT_PORT = 8765
 
@@ -48,7 +50,7 @@ AGENT_PORT = 8765
 #
 CENTRAL_SERVER_URL = os.environ.get(
     "PROCTIFY_SERVER_URL",
-    "https://adequate-mariah-surrounding-values.trycloudflare.com"
+    "https://magnetic-colored-dating-php.trycloudflare.com"
 ).rstrip("/")
 
 
@@ -1010,6 +1012,52 @@ def shutdown_monitor():
 # ============================================================
 
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(
+        description="PROCTIFY Student Monitoring Agent"
+    )
+
+    parser.add_argument(
+        "--server",
+        type=str,
+        default=None,
+        help=(
+            "Central PROCTIFY server URL. "
+            "Defaults to PROCTIFY_SERVER_URL env var "
+            "or the built-in Cloudflare tunnel."
+        )
+    )
+
+    parser.add_argument(
+        "--bind",
+        type=str,
+        default=None,
+        help=(
+            "Address to listen on. "
+            "Use 0.0.0.0 to allow LAN access "
+            "from another PC (default: 127.0.0.1)."
+        )
+    )
+
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help=(
+            "Port to listen on (default: 8765)."
+        )
+    )
+
+    args = parser.parse_args()
+
+    if args.server:
+        CENTRAL_SERVER_URL = args.server.rstrip("/")
+
+    if args.bind:
+        AGENT_HOST = args.bind
+
+    if args.port:
+        AGENT_PORT = args.port
 
     print("=" * 65)
     print("PROCTIFY STUDENT MONITORING AGENT")

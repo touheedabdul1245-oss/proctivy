@@ -334,6 +334,62 @@
 
 
             <!-- =================================================
+                 ASSIGN BATCHES
+            ================================================== -->
+
+            <div style="
+                margin-top: 22px;
+                padding: 20px;
+                border: 1px dashed #cbd5e1;
+                border-radius: 18px;
+                background: #f8fafc;
+                display: grid;
+                gap: 12px;
+            ">
+
+                <div>
+                    <strong style="font-size: 14px;">
+                        Assign Batches
+                    </strong>
+                    <div style="
+                        font-size: 12px;
+                        color: #64748b;
+                        margin-top: 4px;
+                    ">
+                        Select batches to assign this exam to all students in each batch.
+                    </div>
+                </div>
+
+                <div id="batchAssignList"
+                     style="display:grid;gap:8px;max-height:200px;overflow-y:auto;">
+                    Loading batches...
+                </div>
+
+                <button
+                    type="button"
+                    id="batchAssignButton"
+                    style="
+                        padding: 10px 18px;
+                        border: 0;
+                        border-radius: 12px;
+                        background: #0f766e;
+                        color: #fff;
+                        font-weight: 700;
+                        cursor: pointer;
+                        align-self: flex-start;
+                    "
+                    onclick="assignBatchesToExam()"
+                >
+                    Assign Selected Batches
+                </button>
+
+                <div id="batchAssignMessage"
+                     style="min-height:18px; font-size:13px;">
+                </div>
+
+            </div>
+
+            <!-- =================================================
                  BULK ASSIGN STUDENTS (EXCEL)
             ================================================== -->
 
@@ -724,6 +780,10 @@ async function loadExam() {
 
         lucide.createIcons();
 
+        if (typeof loadBatchesForAssignment === "function") {
+            loadBatchesForAssignment();
+        }
+
     }
 
 
@@ -778,6 +838,137 @@ function escapeHTML(value) {
             /'/g,
             "&#039;"
         );
+
+}
+
+
+/* =========================================================
+   BATCH ASSIGNMENT
+========================================================= */
+
+async function loadBatchesForAssignment() {
+
+    const container =
+        document.getElementById(
+            "batchAssignList"
+        );
+
+    if (!container) return;
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/batches",
+                { cache: "no-store" }
+            );
+
+        const data =
+            await response.json();
+
+        if (!response.ok || !data.success) {
+            container.innerHTML = "No batches available.";
+            return;
+        }
+
+        const batches = data.batches || [];
+
+        if (batches.length === 0) {
+            container.innerHTML = "No batches created yet.";
+            return;
+        }
+
+        container.innerHTML = batches.map(function(b) {
+            return '<label style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid #e2e8f0;border-radius:10px;cursor:pointer;">' +
+                '<input type="checkbox" class="batch-assign-checkbox" value="' + b.batch_id + '">' +
+                '<div><strong style="font-size:13px;">' + escapeHTML(b.batch_name) + '</strong>' +
+                '<div style="font-size:11px;color:#64748b;">' + (b.student_count || 0) + ' students</div></div></label>';
+        }).join("");
+
+    } catch (error) {
+        console.error("Load batches error:", error);
+        container.innerHTML = "Unable to load batches.";
+    }
+
+}
+
+
+async function assignBatchesToExam() {
+
+    const message =
+        document.getElementById(
+            "batchAssignMessage"
+        );
+
+    const button =
+        document.getElementById(
+            "batchAssignButton"
+        );
+
+    const selected = [];
+    document.querySelectorAll(".batch-assign-checkbox:checked").forEach(function(cb) {
+        selected.push(parseInt(cb.value));
+    });
+
+    if (selected.length === 0) {
+        if (message) {
+            message.innerText = "Please select at least one batch.";
+            message.style.color = "#dc2626";
+        }
+        return;
+    }
+
+    if (button) {
+        button.disabled = true;
+        button.innerText = "Assigning...";
+    }
+
+    try {
+
+        const response = await fetch(
+            "/api/exams/" +
+            encodeURIComponent(examId) +
+            "/assign-batch",
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ batch_ids: selected })
+            }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            message.innerText = data.error || "Assignment failed.";
+            message.style.color = "#dc2626";
+            return;
+        }
+
+        const unknownText =
+            Array.isArray(data.unknown) && data.unknown.length > 0
+                ? " Unknown IDs: " + data.unknown.join(", ")
+                : "";
+
+        message.innerText =
+            "Assigned " + data.assigned + " student(s) from " +
+            (data.batch_names || []).join(", ") + "." +
+            (data.already_assigned > 0 ? " " + data.already_assigned + " already assigned." : "") +
+            unknownText;
+
+        message.style.color = data.assigned > 0 ? "#16a34a" : "#d97706";
+
+        loadExam();
+
+    } catch (error) {
+        console.error("Batch assignment error:", error);
+        message.innerText = error.message;
+        message.style.color = "#dc2626";
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerText = "Assign Selected Batches";
+        }
+    }
 
 }
 

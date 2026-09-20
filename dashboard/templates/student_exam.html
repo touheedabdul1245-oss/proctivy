@@ -356,6 +356,60 @@
 
         }
 
+        .trust-badge {
+            position: fixed;
+            top: 18px;
+            right: 18px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 700;
+            z-index: 9999;
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(0,0,0,.2);
+            transition: background .3s;
+        }
+
+        .trust-low { background: #dc2626; }
+        .trust-mid { background: #f59e0b; }
+        .trust-ok  { background: #16a34a; }
+
+        .violation-toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            max-width: 340px;
+            padding: 14px 18px;
+            border-radius: 12px;
+            background: #1e1e2f;
+            color: #fff;
+            font-size: 13px;
+            z-index: 10000;
+            box-shadow: 0 6px 20px rgba(0,0,0,.35);
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity .3s, transform .3s;
+            pointer-events: none;
+        }
+
+        .violation-toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .violation-toast .vt-label {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            color: #f87171;
+            margin-bottom: 4px;
+        }
+
+        .violation-toast .vt-text {
+            line-height: 1.4;
+        }
+
     </style>
 
 </head>
@@ -363,6 +417,16 @@
 
 <body>
 
+
+<div id="trustBadge" class="trust-badge trust-ok"
+     style="display:none">
+    TRUST: <span id="trustValue">100</span>
+</div>
+
+<div id="violationToast" class="violation-toast">
+    <div class="vt-label">PROCTIFY WARNING</div>
+    <div class="vt-text" id="violationText"></div>
+</div>
 
 <div class="background-art">
 
@@ -559,6 +623,9 @@
 const examId =
     "{{ exam_id }}";
 
+const STUDENT_AGENT_URL =
+    "{{ student_agent_url }}";
+
 
 let exam = null;
 
@@ -571,6 +638,118 @@ let answers = {};
 let remainingSeconds = 0;
 
 let timerInterval = null;
+
+let lastViolationTimestamp = "";
+
+let trustPollInterval = null;
+
+function updateTrustBadge(score) {
+    const badge =
+        document.getElementById("trustBadge");
+    const val =
+        document.getElementById("trustValue");
+
+    if (score === null || score === undefined) {
+        badge.style.display = "none";
+        return;
+    }
+
+    badge.style.display = "block";
+    val.textContent = score;
+
+    badge.className = "trust-badge";
+    if (score <= 30) {
+        badge.classList.add("trust-low");
+    } else if (score < 80) {
+        badge.classList.add("trust-mid");
+    } else {
+        badge.classList.add("trust-ok");
+    }
+}
+
+function showViolationToast(text) {
+    const toast =
+        document.getElementById("violationToast");
+    const vtText =
+        document.getElementById("violationText");
+
+    vtText.textContent = text;
+    toast.classList.add("show");
+
+    setTimeout(function() {
+        toast.classList.remove("show");
+    }, 5000);
+}
+
+async function pollViolations() {
+    try {
+        const url =
+            "/api/student/live/violations"
+            + (lastViolationTimestamp
+                ? "?since="
+                  + encodeURIComponent(
+                      lastViolationTimestamp
+                    )
+                : "");
+
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (!data.success) return;
+
+        if (data.trust_score !== null &&
+            data.trust_score !== undefined) {
+            updateTrustBadge(data.trust_score);
+        }
+
+        if (data.terminated) {
+            updateTrustBadge(0);
+            clearInterval(trustPollInterval);
+            showViolationToast(
+                "Exam terminated — Trust Score reached 0."
+            );
+            return;
+        }
+
+        if (data.violations &&
+            data.violations.length > 0) {
+
+            const latest = data.violations[0];
+
+            if (latest.timestamp &&
+                latest.timestamp !==
+                    lastViolationTimestamp) {
+
+                lastViolationTimestamp =
+                    latest.timestamp;
+
+                const label =
+                    (latest.violation_type || "Violation")
+                    .replace(/_/g, " ");
+
+                const penalty =
+                    latest.penalty
+                    ? " (-" + latest.penalty + ")"
+                    : "";
+
+                showViolationToast(
+                    label + penalty +
+                    "\nTrust Score: "
+                    + (data.trust_score || "—")
+                );
+            }
+        }
+    } catch (err) {
+        console.error("Violation poll error:", err);
+    }
+}
+
+function startViolationPolling() {
+    pollViolations();
+    trustPollInterval = setInterval(
+        pollViolations, 3000
+    );
+}
 
 /* =========================================================
    TAB MONITORING
@@ -880,6 +1059,8 @@ async function loadExam() {
         examStarted = true;
 
         startTimer();
+
+        startViolationPolling();
 
 
         document.getElementById(
@@ -1284,6 +1465,10 @@ function startTimer() {
                         timerInterval
                     );
 
+                    clearInterval(
+                        trustPollInterval
+                    );
+
 
                     alert(
                         "Time is up. Your examination will be submitted."
@@ -1492,7 +1677,7 @@ async function submitExam() {
  */
 try {
     await fetch(
-        "http://127.0.0.1:8765/stop",
+        STUDENT_AGENT_URL + "/stop",
         {
             method: "POST",
             headers: {

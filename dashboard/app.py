@@ -20,6 +20,11 @@ from datetime import datetime, timedelta
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("PROCTIFY_SECRET_KEY", "proctify-dev-secret-key")
+from dashboard import webrtc
+app.register_blueprint(webrtc.webrtc_bp)
+from dashboard.batch_reports import batch_reports_bp
+app.register_blueprint(batch_reports_bp)
+app.secret_key = os.environ.get("PROCTIFY_SECRET_KEY", "proctify-dev-secret-key")
 
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
@@ -59,7 +64,8 @@ TEACHER_ONLY_APIS = (
     "/api/evidence/",
     "/api/live/video/",
     "/api/monitor/violations",
-    "/api/excel/"
+    "/api/excel/",
+    "/api/batches"
 )
 
 
@@ -214,6 +220,31 @@ def ensure_mysql_schema():
             )
 
         # ----------------------------------------------------
+        # BATCHES (grouping for Excel-enrolled students)
+        # ----------------------------------------------------
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS batches (
+                batch_id INT AUTO_INCREMENT PRIMARY KEY,
+                batch_name VARCHAR(255) NOT NULL,
+                source_filename VARCHAR(255) DEFAULT NULL,
+                student_count INT DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS batch_members (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                batch_id INT NOT NULL,
+                student_id VARCHAR(100) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_batch_student (batch_id, student_id),
+                FOREIGN KEY (batch_id) REFERENCES batches(batch_id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+        # ----------------------------------------------------
         # exam_sessions.status  ->  allow TERMINATED
         # ----------------------------------------------------
 
@@ -283,7 +314,16 @@ LIVE_MONITOR_FILE = os.path.join(
 
 # Student-side agent. The AI monitor runs on the student's PC,
 # not on this Flask/teacher server.
-STUDENT_AGENT_URL = "http://127.0.0.1:8765"
+#
+# In a 2-PC LAN setup the student agent lives on a different machine,
+# so this must be the LAN IP of that machine, e.g.:
+#
+#   set PROCTIFY_AGENT_URL=http://192.168.1.100:8765
+#
+STUDENT_AGENT_URL = os.environ.get(
+    "PROCTIFY_AGENT_URL",
+    "http://127.0.0.1:8765"
+)
 
 monitor_processes = {}
 
@@ -1877,6 +1917,212 @@ def api_student_live_current():
             "success": False,
             "error": str(error)
         }), 500
+
+
+@app.route(
+    "/api/student/live/violations",
+    methods=["GET"]
+)
+def api_student_live_violations():
+    """
+    Student-facing endpoint: return recent violations
+    and current trust score for the logged-in student's
+    active exam session.
+    """
+    student_id = session.get("student_id")
+
+    if not student_id:
+        return jsonify({
+            "success": False,
+            "error": "Student not logged in"
+        }), 401
+
+    connection = None
+    cursor = None
+
+    try:
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({
+                "success": False,
+                "error": "Database unavailable"
+            }), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute(
+            "SELECT session_id, trust_score, risk_level "
+            "FROM live_students "
+            "WHERE student_id = %s "
+            "AND status IN ('ONLINE','TERMINATED') "
+            "ORDER BY last_update DESC LIMIT 1",
+            (str(student_id),)
+        )
+        live_row = cursor.fetchone()
+
+        if not live_row:
+            return jsonify({
+                "success": True,
+                "trust_score": None,
+                "risk_level": None,
+                "violations": [],
+                "terminated": False
+            })
+
+        session_id = live_row.get("session_id")
+        trust_score = live_row.get("trust_score")
+        risk_level = live_row.get("risk_level")
+        terminated = (
+            str(live_row.get("risk_level", ""))
+            == "TERMINATED"
+            or trust_score == 0
+        )
+
+        violations = []
+
+        if session_id:
+            since = request.args.get("since", "")
+            if since:
+                cursor.execute(
+                    "SELECT id, violation_type, severity, "
+                    "penalty, description, timestamp "
+                    "FROM violations "
+                    "WHERE session_id = %s "
+                    "AND timestamp > %s "
+                    "ORDER BY timestamp DESC "
+                    "LIMIT 10",
+                    (str(session_id), since)
+                )
+            else:
+                cursor.execute(
+                    "SELECT id, violation_type, severity, "
+                    "penalty, description, timestamp "
+                    "FROM violations "
+                    "WHERE session_id = %s "
+                    "ORDER BY timestamp DESC "
+                    "LIMIT 5",
+                    (str(session_id),)
+                )
+            violations = cursor.fetchall()
+
+            for v in violations:
+                for key, val in list(v.items()):
+                    if isinstance(val, datetime):
+                        v[key] = val.isoformat()
+
+        return jsonify({
+            "success": True,
+            "trust_score": trust_score,
+            "risk_level": risk_level,
+            "terminated": (
+                str(live_row.get("risk_level", ""))
+                in ("TERMINATED",)
+                or trust_score == 0
+            ),
+            "violations": violations
+        })
+
+    except Exception as error:
+        print("Student violations error:", error)
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 500
+
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+@app.route(
+    "/api/student/exam-result/<exam_id>",
+    methods=["GET"]
+)
+def api_student_exam_result(exam_id):
+    """
+    Student-facing: return their submission result
+    for a specific exam.
+    """
+    student_id = session.get("student_id")
+    if not student_id:
+        return jsonify({
+            "success": False,
+            "error": "Student not logged in"
+        }), 401
+
+    connection = None
+    cursor = None
+    try:
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({
+                "success": False,
+                "error": "Database unavailable"
+            }), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute(
+            "SELECT exam_name FROM exams "
+            "WHERE exam_id = %s LIMIT 1",
+            (str(exam_id),)
+        )
+        exam_row = cursor.fetchone()
+        exam_name = (
+            exam_row.get("exam_name", "")
+            if exam_row else ""
+        )
+
+        cursor.execute(
+            """
+            SELECT submission_id, exam_id,
+                   student_id, session_id, score,
+                   teacher_marks, trust_score,
+                   total_questions, submitted_at,
+                   evaluated_at, status,
+                   evaluation_type, teacher_feedback
+            FROM exam_submissions
+            WHERE exam_id = %s
+              AND student_id = %s
+            ORDER BY submission_id DESC
+            LIMIT 1
+            """,
+            (str(exam_id), str(student_id))
+        )
+        sub = cursor.fetchone()
+
+        if sub is None:
+            return jsonify({
+                "success": True,
+                "exam_name": exam_name,
+                "submission": None
+            })
+
+        for key, val in list(sub.items()):
+            if isinstance(val, datetime):
+                sub[key] = val.isoformat()
+
+        return jsonify({
+            "success": True,
+            "exam_name": exam_name,
+            "submission": sub
+        })
+
+    except Exception as error:
+        print("Student result error:", error)
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 500
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
 # ============================================================
 # API - ALL STUDENTS
 # ============================================================
@@ -1905,11 +2151,13 @@ def api_students():
         cursor.execute(
             """
             SELECT
-                student_id,
-                student_name,
-                username
-            FROM students
-            ORDER BY created_at DESC
+                s.student_id,
+                s.student_name,
+                s.username
+            FROM students s
+            LEFT JOIN batch_members bm ON bm.student_id = s.student_id
+            WHERE bm.id IS NULL
+            ORDER BY s.created_at DESC
             """
         )
 
@@ -2725,6 +2973,20 @@ def create_exam():
             if str(student_id).strip()
         ]
 
+        selected_batches = data.get(
+            "selected_batches",
+            []
+        )
+
+        if not isinstance(selected_batches, list):
+            selected_batches = []
+
+        selected_batches = [
+            int(batch_id)
+            for batch_id in selected_batches
+            if str(batch_id).strip()
+        ]
+
         scheduled_start = str(
             data.get(
                 "scheduled_start",
@@ -2776,11 +3038,11 @@ def create_exam():
                 "error": "At least one question is required"
             }), 400
 
-        if not selected_students:
+        if not selected_students and not selected_batches:
 
             return jsonify({
                 "success": False,
-                "error": "At least one student must be assigned"
+                "error": "At least one student or batch must be assigned"
             }), 400
 
 
@@ -3011,6 +3273,70 @@ def create_exam():
         )
 
         # ----------------------------------------------------
+        # RESOLVE BATCH MEMBERS
+        # ----------------------------------------------------
+
+        batch_student_ids = set()
+        student_batch_map = {}
+
+        for batch_id in selected_batches:
+
+            cursor.execute(
+                "SELECT batch_id, batch_name "
+                "FROM batches "
+                "WHERE batch_id = %s "
+                "LIMIT 1",
+                (batch_id,)
+            )
+
+            batch = cursor.fetchone()
+
+            if batch is None:
+                continue
+
+            cursor.execute(
+                "SELECT bm.student_id "
+                "FROM batch_members bm "
+                "WHERE bm.batch_id = %s",
+                (batch_id,)
+            )
+
+            for member in cursor.fetchall():
+                sid = str(member[0])
+
+                cursor.execute(
+                    "SELECT student_id "
+                    "FROM students "
+                    "WHERE student_id = %s "
+                    "LIMIT 1",
+                    (sid,)
+                )
+
+                if cursor.fetchone() is not None:
+                    batch_student_ids.add(sid)
+                    student_batch_map[sid] = int(batch_id)
+
+
+        # ----------------------------------------------------
+        # COMBINE + DEDUPLICATE
+        # ----------------------------------------------------
+
+        all_student_ids = list(
+            set(selected_students) | batch_student_ids
+        )
+
+        if not all_student_ids:
+
+            return jsonify({
+                "success": False,
+                "error": (
+                    "Selected batch(es) contain "
+                    "no valid students."
+                )
+            }), 400
+
+
+        # ----------------------------------------------------
         # SAVE EXAM -> STUDENT ASSIGNMENTS
         # ----------------------------------------------------
 
@@ -3020,23 +3346,47 @@ def create_exam():
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 exam_id VARCHAR(100) NOT NULL,
                 student_id VARCHAR(100) NOT NULL,
+                batch_id INT DEFAULT NULL,
                 assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE KEY unique_exam_student (exam_id, student_id)
             )
             """
         )
 
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'exam_assignments'
+              AND COLUMN_NAME = 'batch_id'
+        """
+        )
+        if cursor.fetchone()[0] == 0:
+            cursor.execute(
+                "ALTER TABLE exam_assignments "
+                "ADD COLUMN batch_id INT DEFAULT NULL "
+                "AFTER student_id"
+            )
+
         assignment_query = """
             INSERT IGNORE INTO exam_assignments
-                (exam_id, student_id)
-            VALUES (%s, %s)
+                (exam_id, student_id, batch_id)
+            VALUES (%s, %s, %s)
         """
 
-        for student_id in selected_students:
+        assigned_count = 0
+
+        for student_id in all_student_ids:
+            batch_for_student = student_batch_map.get(
+                student_id
+            )
             cursor.execute(
                 assignment_query,
-                (exam_id, student_id)
+                (exam_id, student_id, batch_for_student)
             )
+            if cursor.rowcount == 1:
+                assigned_count += 1
 
         connection.commit()
 
@@ -3116,6 +3466,9 @@ def create_exam():
 
             "message":
                 "Exam created successfully",
+
+            "assigned_count":
+                assigned_count,
 
             "exam":
                 exam_data
@@ -4877,8 +5230,11 @@ def monitor_violation():
         severity = str(data.get("severity", "MEDIUM")).strip()
         description = str(data.get("description", "")).strip()
         penalty = int(data.get("penalty", 0) or 0)
-        old_score = int(data.get("old_score", 100) or 100)
-        new_score = int(data.get("new_score", 100) or 100)
+        raw_old = data.get("old_score")
+        old_score = int(raw_old) if raw_old is not None else 100
+
+        raw_new = data.get("new_score")
+        new_score = int(raw_new) if raw_new is not None else 100
 
         if not session_id or not student_id or not violation_type:
             return jsonify({
@@ -5468,6 +5824,89 @@ def monitor_terminate():
             session_id
         ))
 
+        # ----------------------------------------------------
+        # AUTO-CREATE SUBMISSION FOR TERMINATED EXAMS
+        # ----------------------------------------------------
+        # When trust score reaches 0 the student cannot submit
+        # normally.  Create a submission record so the teacher
+        # can see it in the Submissions panel and evaluate it.
+        # ----------------------------------------------------
+
+        exam_id_for_submission = None
+
+        try:
+            cursor.execute(
+                "SELECT exam_id FROM exams "
+                "WHERE exam_name = %s LIMIT 1",
+                (exam_name,)
+            )
+            eid_row = cursor.fetchone()
+            if eid_row:
+                exam_id_for_submission = (
+                    eid_row.get("exam_id")
+                    if isinstance(eid_row, dict)
+                    else eid_row[0]
+                )
+        except Exception:
+            pass
+
+        has_submission = False
+
+        if exam_id_for_submission:
+            try:
+                cursor.execute(
+                    "SELECT submission_id "
+                    "FROM exam_submissions "
+                    "WHERE session_id = %s LIMIT 1",
+                    (session_id,)
+                )
+                existing = cursor.fetchone()
+                if existing:
+                    has_submission = True
+            except Exception:
+                pass
+
+        if exam_id_for_submission and not has_submission:
+            try:
+                cursor.execute(
+                    """
+                    INSERT INTO exam_submissions
+                    (
+                        exam_id,
+                        student_id,
+                        session_id,
+                        answers,
+                        score,
+                        teacher_marks,
+                        trust_score,
+                        total_questions,
+                        submitted_at,
+                        evaluated_at,
+                        status,
+                        evaluation_type,
+                        teacher_feedback
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        exam_id_for_submission,
+                        student_id,
+                        session_id,
+                        "{}",
+                        None,
+                        None,
+                        final_trust_score,
+                        0,
+                        end_time,
+                        None,
+                        "PENDING_REVIEW",
+                        "MANUAL",
+                        "Auto-created on termination (Trust Score reached 0)"
+                    )
+                )
+            except Exception as sub_err:
+                print("Termination submission creation error:", sub_err)
+
         connection.commit()
 
         # If this Flask instance owns the monitor process, stop it only
@@ -5589,7 +6028,12 @@ def monitor_session_complete():
         exam_name = str(data.get("exam_name", "PROCTIFY EXAM")).strip()
         start_time = data.get("start_time")
         end_time = data.get("end_time")
-        trust_score = int(data.get("final_trust_score", 100) or 100)
+        raw_trust = data.get("final_trust_score")
+        trust_score = (
+            int(raw_trust)
+            if raw_trust is not None
+            else 100
+        )
         risk_level = str(data.get("final_risk_level", "LOW"))
 
         session_status = str(
@@ -6936,6 +7380,18 @@ def delete_student(student_id):
         assignments_deleted = cursor.rowcount
 
         cursor.execute(
+            "DELETE FROM batch_members WHERE student_id = %s",
+            (student_id,)
+        )
+
+        cursor.execute("""
+            UPDATE batches b
+            SET student_count = (
+                SELECT COUNT(*) FROM batch_members bm WHERE bm.batch_id = b.batch_id
+            )
+        """)
+
+        cursor.execute(
             "DELETE FROM live_students WHERE student_id = %s",
             (student_id,)
         )
@@ -8168,16 +8624,22 @@ def get_enrolled_students():
         cursor.execute(
             """
             SELECT
-                student_id,
-                student_name,
-                username,
-                created_at
-            FROM students
-            ORDER BY created_at DESC
+                s.student_id,
+                s.student_name,
+                s.username,
+                s.created_at
+            FROM students s
+            LEFT JOIN batch_members bm ON bm.student_id = s.student_id
+            WHERE bm.id IS NULL
+            ORDER BY s.created_at DESC
             """
         )
 
         students = cursor.fetchall()
+
+        cursor.execute("SELECT COUNT(*) AS cnt FROM students")
+        _total_row = cursor.fetchone()
+        total_count = _total_row["cnt"] if _total_row else len(students)
 
         for student in students:
 
@@ -8197,6 +8659,7 @@ def get_enrolled_students():
         return jsonify({
             "success": True,
             "count": len(students),
+            "total_count": total_count,
             "students": students
         })
 
@@ -8300,15 +8763,33 @@ def excel_enroll_students():
     headers = _excel_headers(sheet)
     normalized = {_normalize_excel_header(h): i for i, h in enumerate(headers)}
 
-    id_index = normalized.get("student_id") or normalized.get("studentid")
-    name_index = normalized.get("student_name") or normalized.get("studentname")
+    print("[EXCEL UPLOAD] Received headers:", headers)
+    print("[EXCEL UPLOAD] Normalized headers:", normalized)
+
+    id_index = normalized.get("student_id")
+    if id_index is None:
+        id_index = normalized.get("studentid")
+    name_index = normalized.get("student_name")
+    if name_index is None:
+        name_index = normalized.get("studentname")
     username_index = normalized.get("username")
     password_index = normalized.get("password")
 
-    if id_index is None or name_index is None:
+    missing = []
+    if id_index is None:
+        missing.append("student_id")
+    if name_index is None:
+        missing.append("student_name")
+    if username_index is None:
+        missing.append("username")
+    if password_index is None:
+        missing.append("password")
+
+    if missing:
+        found_headers = [h for h in headers if h.strip()]
         return jsonify({
             "success": False,
-            "error": "Workbook must have a header row with 'student_id', 'student_name', 'username' and 'password'."
+            "error": "Invalid Excel format.\n\nMissing columns: " + ", ".join(missing) + "\n\nFound columns: " + (", ".join(found_headers) if found_headers else "none")
         }), 400
 
     rows = _excel_rows(sheet)
@@ -8322,10 +8803,32 @@ def excel_enroll_students():
     inserted = 0
     duplicate = 0
     failures = []
+    total_students = len(rows)
+
+    filename = uploaded.filename.replace(".xlsx", "") if uploaded.filename else "excel"
 
     try:
         cursor = connection.cursor(dictionary=True)
 
+        cursor.execute(
+            "SELECT batch_id FROM batches WHERE batch_name = %s LIMIT 1",
+            (filename,)
+        )
+        existing_batch = cursor.fetchone()
+
+        if existing_batch:
+            return jsonify({
+                "success": False,
+                "error": f"Batch '{filename}' already exists. Please rename the file or delete the existing batch first."
+            }), 409
+
+        cursor.execute(
+            "INSERT INTO batches (batch_name, source_filename, student_count) VALUES (%s, %s, 0)",
+            (filename, uploaded.filename)
+        )
+        batch_id = cursor.lastrowid
+
+        inserted_student_ids = []
         row_number = 1
         for row in rows:
 
@@ -8358,6 +8861,13 @@ def excel_enroll_students():
 
             if cursor.fetchone() is not None:
                 duplicate += 1
+                cursor.execute(
+                    "SELECT student_id FROM students WHERE student_id = %s LIMIT 1",
+                    (student_id,)
+                )
+                existing = cursor.fetchone()
+                if existing:
+                    inserted_student_ids.append(str(existing["student_id"]))
                 continue
 
             cursor.execute(
@@ -8370,6 +8880,18 @@ def excel_enroll_students():
             )
 
             inserted += 1
+            inserted_student_ids.append(student_id)
+
+        for sid in inserted_student_ids:
+            cursor.execute(
+                "INSERT IGNORE INTO batch_members (batch_id, student_id) VALUES (%s, %s)",
+                (batch_id, sid)
+            )
+
+        cursor.execute(
+            "UPDATE batches SET student_count = (SELECT COUNT(*) FROM batch_members WHERE batch_id = %s) WHERE batch_id = %s",
+            (batch_id, batch_id)
+        )
 
         connection.commit()
 
@@ -8377,7 +8899,11 @@ def excel_enroll_students():
             "success": True,
             "inserted": inserted,
             "duplicate": duplicate,
-            "failures": failures
+            "failures": failures,
+            "total_students": total_students,
+            "filename": filename,
+            "batch_id": batch_id,
+            "batch_name": filename
         }), 200
 
     except mysql.connector.Error as error:
@@ -8454,6 +8980,7 @@ def excel_assign_exam(exam_id):
     cursor = None
     assigned = 0
     unknown = []
+    total_students = len(student_ids)
 
     try:
         cursor = connection.cursor(dictionary=True)
@@ -8488,10 +9015,14 @@ def excel_assign_exam(exam_id):
 
         connection.commit()
 
+        filename = uploaded.filename.replace(".xlsx", "") if uploaded.filename else "excel"
+
         return jsonify({
             "success": True,
             "assigned": assigned,
-            "unknown": unknown
+            "unknown": unknown,
+            "total_students": total_students,
+            "filename": filename
         }), 200
 
     except mysql.connector.Error as error:
@@ -8564,6 +9095,587 @@ def excel_assignment_template():
         download_name="proctify_assignment_template.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+
+# ============================================================
+# BATCH MANAGEMENT API
+# ============================================================
+
+@app.route("/api/batches", methods=["GET"])
+def get_batches():
+
+    if not teacher_logged_in():
+        return jsonify({"success": False, "error": "Teacher login required."}), 401
+
+    connection = None
+    cursor = None
+
+    try:
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({"success": False, "error": "Database unavailable."}), 500
+
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT batch_id, batch_name, source_filename, student_count, created_at
+            FROM batches
+            ORDER BY created_at DESC
+        """)
+        batches = cursor.fetchall()
+
+        for b in batches:
+            if isinstance(b.get("created_at"), datetime):
+                b["created_at"] = b["created_at"].isoformat()
+
+        return jsonify({"success": True, "batches": batches})
+
+    except Exception as error:
+        print("Get batches error:", error)
+        return jsonify({"success": False, "error": str(error), "batches": []}), 500
+
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+@app.route("/api/batches/<int:batch_id>/students", methods=["GET"])
+def get_batch_students(batch_id):
+
+    if not teacher_logged_in():
+        return jsonify({"success": False, "error": "Teacher login required."}), 401
+
+    connection = None
+    cursor = None
+
+    try:
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({"success": False, "error": "Database unavailable."}), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("SELECT batch_id, batch_name, student_count FROM batches WHERE batch_id = %s", (batch_id,))
+        batch = cursor.fetchone()
+        if not batch:
+            return jsonify({"success": False, "error": "Batch not found."}), 404
+
+        cursor.execute("""
+            SELECT s.student_id, s.student_name, s.username, s.created_at
+            FROM students s
+            INNER JOIN batch_members bm ON bm.student_id = s.student_id
+            WHERE bm.batch_id = %s
+            ORDER BY s.student_id
+        """, (batch_id,))
+        students = cursor.fetchall()
+
+        for s in students:
+            if isinstance(s.get("created_at"), datetime):
+                s["created_at"] = s["created_at"].isoformat()
+
+        return jsonify({
+            "success": True,
+            "batch": batch,
+            "students": students,
+            "count": len(students)
+        })
+
+    except Exception as error:
+        print("Get batch students error:", error)
+        return jsonify({"success": False, "error": str(error)}), 500
+
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+@app.route("/api/batches/<int:batch_id>", methods=["DELETE"])
+def delete_batch(batch_id):
+
+    if not teacher_logged_in():
+        return jsonify({"success": False, "error": "Teacher login required."}), 401
+
+    connection = None
+    cursor = None
+
+    try:
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({"success": False, "error": "Database unavailable."}), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("SELECT batch_id, batch_name FROM batches WHERE batch_id = %s", (batch_id,))
+        batch = cursor.fetchone()
+        if not batch:
+            return jsonify({"success": False, "error": "Batch not found."}), 404
+
+        cursor.execute("DELETE FROM batch_members WHERE batch_id = %s", (batch_id,))
+        cursor.execute("DELETE FROM batches WHERE batch_id = %s", (batch_id,))
+        connection.commit()
+
+        return jsonify({"success": True, "message": f"Batch '{batch['batch_name']}' deleted."})
+
+    except Exception as error:
+        print("Delete batch error:", error)
+        if connection is not None:
+            connection.rollback()
+        return jsonify({"success": False, "error": str(error)}), 500
+
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+# ============================================================
+# BATCH-BASED EXAM ASSIGNMENT
+# ============================================================
+
+@app.route("/api/exams/<exam_id>/assign-batch", methods=["POST"])
+def assign_batch_to_exam(exam_id):
+
+    if not teacher_logged_in():
+        return jsonify({"success": False, "error": "Teacher login required."}), 401
+
+    data = request.get_json(silent=True) or {}
+    batch_ids = data.get("batch_ids", [])
+
+    if not isinstance(batch_ids, list) or not batch_ids:
+        return jsonify({"success": False, "error": "No batch IDs provided."}), 400
+
+    connection = None
+    cursor = None
+
+    try:
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({"success": False, "error": "Database unavailable."}), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("SELECT exam_id FROM exams WHERE exam_id = %s LIMIT 1", (str(exam_id),))
+        if cursor.fetchone() is None:
+            return jsonify({"success": False, "error": "Exam not found."}), 404
+
+        assigned = 0
+        already_assigned = 0
+        unknown_students = []
+        assigned_batch_names = []
+
+        for bid in batch_ids:
+            cursor.execute("SELECT batch_id, batch_name FROM batches WHERE batch_id = %s", (int(bid),))
+            batch = cursor.fetchone()
+            if not batch:
+                continue
+
+            assigned_batch_names.append(batch["batch_name"])
+
+            cursor.execute("""
+                SELECT bm.student_id
+                FROM batch_members bm
+                WHERE bm.batch_id = %s
+            """, (int(bid),))
+            members = cursor.fetchall()
+
+            for member in members:
+                sid = str(member["student_id"])
+                cursor.execute(
+                    "SELECT student_id FROM students WHERE student_id = %s LIMIT 1",
+                    (sid,)
+                )
+                if cursor.fetchone() is None:
+                    unknown_students.append(sid)
+                    continue
+
+                cursor.execute(
+                    "INSERT IGNORE INTO exam_assignments (exam_id, student_id, batch_id) VALUES (%s, %s, %s)",
+                    (str(exam_id), sid, int(bid))
+                )
+                if cursor.rowcount == 1:
+                    assigned += 1
+                else:
+                    already_assigned += 1
+
+        connection.commit()
+
+        return jsonify({
+            "success": True,
+            "assigned": assigned,
+            "already_assigned": already_assigned,
+            "unknown": unknown_students,
+            "batch_names": assigned_batch_names
+        }), 200
+
+    except mysql.connector.Error as error:
+        if connection is not None:
+            connection.rollback()
+        return jsonify({"success": False, "error": f"Database error: {error}"}), 500
+
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+# ============================================================
+# REPORT EXPORT — PDF & EXCEL
+# ============================================================
+
+@app.route("/api/reports/export/pdf", methods=["POST"])
+def export_reports_pdf():
+    """
+    Teacher selects multiple session IDs and
+    downloads a PDF with all their reports.
+    """
+    if not teacher_logged_in():
+        return jsonify({
+            "success": False,
+            "error": "Teacher login required."
+        }), 401
+
+    data = request.get_json(silent=True) or {}
+    session_ids = data.get("session_ids", [])
+
+    if not isinstance(session_ids, list) or not session_ids:
+        return jsonify({
+            "success": False,
+            "error": "No session IDs provided."
+        }), 400
+
+    connection = None
+    cursor = None
+    try:
+        from fpdf import FPDF
+
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({
+                "success": False,
+                "error": "Database unavailable."
+            }), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.add_page()
+        pdf.set_font("Helvetica", "B", 18)
+        pdf.cell(0, 12, "PROCTIFY", ln=True)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.cell(
+            0, 8,
+            f"Exam Report — {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            ln=True
+        )
+        pdf.ln(6)
+
+        for sid in session_ids:
+            cursor.execute("""
+                SELECT
+                    es.session_id, es.student_id,
+                    s.student_name, es.exam_name,
+                    es.start_time, es.end_time,
+                    es.status, es.final_trust_score,
+                    es.final_risk_level
+                FROM exam_sessions es
+                LEFT JOIN students s
+                    ON s.student_id = es.student_id
+                WHERE es.session_id = %s
+                LIMIT 1
+            """, (str(sid),))
+            row = cursor.fetchone()
+            if not row:
+                continue
+
+            cursor.execute("""
+                SELECT COUNT(*) AS cnt
+                FROM violations v
+                WHERE v.session_id = %s
+            """, (str(sid),))
+            vcnt = cursor.fetchone() or {}
+            violation_count = vcnt.get("cnt", 0)
+
+            cursor.execute("""
+                SELECT COUNT(*) AS cnt
+                FROM evidence ev
+                WHERE ev.session_id = %s
+            """, (str(sid),))
+            ecnt = cursor.fetchone() or {}
+            evidence_count = ecnt.get("cnt", 0)
+
+            cursor.execute("""
+                SELECT score, status, evaluation_type,
+                       teacher_marks, teacher_feedback
+                FROM exam_submissions
+                WHERE session_id = %s
+                ORDER BY submission_id DESC
+                LIMIT 1
+            """, (str(sid),))
+            sub = cursor.fetchone() or {}
+
+            pdf.set_font("Helvetica", "B", 12)
+            pdf.cell(
+                0, 9,
+                f"Student: {row.get('student_name') or row.get('student_id', 'UNKNOWN')}",
+                ln=True
+            )
+            pdf.set_font("Helvetica", "", 10)
+
+            trust = row.get("final_trust_score")
+            score = sub.get("score")
+            status_val = (
+                sub.get("status") or row.get("status") or ""
+            ).upper()
+            result = "PENDING"
+            if status_val == "EVALUATED" and score is not None:
+                result = "PASS" if float(score) >= 50 else "FAIL"
+
+            lines = [
+                f"Student ID: {row.get('student_id', '')}",
+                f"Exam: {row.get('exam_name', '')}",
+                f"Status: {status_val}",
+                f"Marks: {score if score is not None else 'PENDING'}",
+                f"Trust Score: {trust if trust is not None else '—'}",
+                f"Risk Level: {row.get('final_risk_level', '—')}",
+                f"Result: {result}",
+                f"Violations: {violation_count}",
+                f"Evidence: {evidence_count}",
+                f"Evaluation: {sub.get('evaluation_type', '—')}",
+            ]
+            if sub.get("teacher_feedback"):
+                lines.append(
+                    f"Feedback: {sub['teacher_feedback']}"
+                )
+
+            for line in lines:
+                pdf.cell(0, 6, line, ln=True)
+
+            pdf.ln(4)
+            pdf.line(
+                10, pdf.get_y(), 200, pdf.get_y()
+            )
+            pdf.ln(4)
+
+        import io
+        pdf_bytes = pdf.output()
+        buf = io.BytesIO(pdf_bytes)
+        buf.seek(0)
+
+        return send_file(
+            buf,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=(
+                f"proctify_report_"
+                f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+            )
+        )
+
+    except Exception as error:
+        print("PDF export error:", error)
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 500
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
+@app.route("/api/reports/export/excel", methods=["POST"])
+def export_reports_excel():
+    """
+    Teacher selects multiple session IDs and
+    downloads an Excel file with all their reports.
+    """
+    if not teacher_logged_in():
+        return jsonify({
+            "success": False,
+            "error": "Teacher login required."
+        }), 401
+
+    data = request.get_json(silent=True) or {}
+    session_ids = data.get("session_ids", [])
+
+    if not isinstance(session_ids, list) or not session_ids:
+        return jsonify({
+            "success": False,
+            "error": "No session IDs provided."
+        }), 400
+
+    connection = None
+    cursor = None
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, Alignment
+
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({
+                "success": False,
+                "error": "Database unavailable."
+            }), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "PROCTIFY Reports"
+
+        headers = [
+            "Student Name", "Student ID", "Exam Name",
+            "Marks", "Max Marks", "Percentage",
+            "Trust Score", "Risk Level",
+            "Violations", "Evidence",
+            "Pass/Fail", "Status",
+            "Evaluation", "Termination Reason"
+        ]
+
+        header_font = Font(bold=True)
+        for col, h in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=h)
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center")
+
+        row_num = 2
+
+        for sid in session_ids:
+            cursor.execute("""
+                SELECT
+                    es.session_id, es.student_id,
+                    s.student_name, es.exam_name,
+                    es.start_time, es.end_time,
+                    es.status, es.final_trust_score,
+                    es.final_risk_level
+                FROM exam_sessions es
+                LEFT JOIN students s
+                    ON s.student_id = es.student_id
+                WHERE es.session_id = %s
+                LIMIT 1
+            """, (str(sid),))
+            row = cursor.fetchone()
+            if not row:
+                continue
+
+            cursor.execute("""
+                SELECT COUNT(*) AS cnt
+                FROM violations v
+                WHERE v.session_id = %s
+            """, (str(sid),))
+            vcnt = cursor.fetchone() or {}
+            violation_count = vcnt.get("cnt", 0)
+
+            cursor.execute("""
+                SELECT COUNT(*) AS cnt
+                FROM evidence ev
+                WHERE ev.session_id = %s
+            """, (str(sid),))
+            ecnt = cursor.fetchone() or {}
+            evidence_count = ecnt.get("cnt", 0)
+
+            cursor.execute("""
+                SELECT score, status, evaluation_type,
+                       teacher_marks, teacher_feedback
+                FROM exam_submissions
+                WHERE session_id = %s
+                ORDER BY submission_id DESC
+                LIMIT 1
+            """, (str(sid),))
+            sub = cursor.fetchone() or {}
+
+            trust = row.get("final_trust_score")
+            score = sub.get("score")
+            status_val = (
+                sub.get("status") or row.get("status") or ""
+            ).upper()
+            result = "PENDING"
+            if status_val == "EVALUATED" and score is not None:
+                result = "PASS" if float(score) >= 50 else "FAIL"
+
+            termination_reason = ""
+            if status_val == "TERMINATED":
+                termination_reason = "Trust Score reached 0"
+
+            values = [
+                row.get("student_name", ""),
+                row.get("student_id", ""),
+                row.get("exam_name", ""),
+                score if score is not None else "PENDING",
+                100,
+                (
+                    f"{float(score):.1f}%"
+                    if score is not None else "—"
+                ),
+                trust if trust is not None else "—",
+                row.get("final_risk_level", "—"),
+                violation_count,
+                evidence_count,
+                result,
+                status_val,
+                sub.get("evaluation_type", "—"),
+                termination_reason,
+            ]
+
+            for col, val in enumerate(values, 1):
+                ws.cell(
+                    row=row_num, column=col,
+                    value=val
+                )
+            row_num += 1
+
+        for col_cells in ws.columns:
+            max_len = 0
+            col_letter = col_cells[0].column_letter
+            for cell in col_cells:
+                try:
+                    if cell.value:
+                        max_len = max(
+                            max_len,
+                            len(str(cell.value))
+                        )
+                except Exception:
+                    pass
+            ws.column_dimensions[
+                col_letter
+            ].width = min(max_len + 3, 30)
+
+        import io
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        return send_file(
+            buf,
+            mimetype=(
+                "application/vnd.openxmlformats-"
+                "officedocument.spreadsheetml.sheet"
+            ),
+            as_attachment=True,
+            download_name=(
+                f"proctify_report_"
+                f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            )
+        )
+
+    except Exception as error:
+        print("Excel export error:", error)
+        return jsonify({
+            "success": False,
+            "error": str(error)
+        }), 500
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
 
 
 # ============================================================
@@ -8829,8 +9941,6 @@ if __name__ == "__main__":
     print(
         "========================================"
     )
-
-    print()
 
     app.run(
 

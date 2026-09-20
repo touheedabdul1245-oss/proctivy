@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Proctoring - Live Monitoring</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .header { background: #2c3e50; color: white; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+        .status { padding: 10px; border-radius: 5px; margin: 10px 0; }
+        .connected { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .disconnected { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .btn { padding: 10px 20px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
+        .btn:disabled { background: #95a5a6; cursor: not-allowed; }
+        .btn:hover:not(:disabled) { background: #2980b9; }
+        .feed-container { background: white; padding: 15px; margin: 10px 0; border-radius: 5px; border: 1px solid #dee2e6; }
+        video { width: 100%; max-width: 400px; height: auto; border-radius: 5px; }
+        #student-id { margin-top: 10px; font-weight: bold; color: #2c3e50; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>Student Live Monitoring</h2>
+            <div id="status" class="disconnected">Not connected</div>
+        </div>
+        
+        <student-id id="student-id">Student ID: Waiting...</student-id>
+        
+        <button class="btn" id="start-btn" disabled>Start Monitoring</button>
+        <button class="btn" id="stop-btn" disabled style="background: #e74c3c;">Stop Monitoring</button>
+        
+        <div id="feeds">
+            <!-- Student feeds will be injected here -->
+        </div>
+    </div>
+
+    <script>
+        // WebRTC Configuration
+        let peerConnection = null;
+        let studentId = null;
+        let isStreaming = false;
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Get student ID from Flask template or session
+            const idElement = document.getElementById('student-id');
+            studentId = "STUDENT_E2E_001"; // Will be set by Flask backend
+            
+            const startBtn = document.getElementById('start-btn');
+            const stopBtn = document.getElementById('stop-btn');
+            const statusDiv = document.getElementById('status');
+            const startBtn = document.getElementById('start-btn');
+
+            // Start WebRTC connection
+            startBtn.addEventListener('click', async () => {
+                statusDiv.className = 'connected';
+                statusDiv.textContent = 'Connecting...';
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                
+                try {
+                    // Signal Janus server through Flask API
+                    const response = await fetch('/api/students/start-webrtc', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ student_id: studentId })
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        statusDiv.textContent = 'Connected - Live feed active';
+                        startFeed();
+                    } else {
+                        statusDiv.className = 'disconnected';
+                        statusDiv.textContent = 'Connection failed: ' + (data.error || 'Unknown error');
+                    }
+                } catch (error) {
+                    statusDiv.className = 'disconnected';
+                    statusDiv.textContent = 'Error: ' + error.message;
+                }
+            });
+
+            // Stop WebRTC connection
+            stopBtn.addEventListener('click', async () => {
+                try {
+                    const response = await fetch(`/api/teacher/stop-student/${studentId}`, {
+                        method: 'POST'
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        statusDiv.className = 'disconnected';
+                        statusDiv.textContent = 'Disconnected';
+                        stopFeed();
+                    }
+                } catch (error) {
+                    console.error('Error stopping stream:', error);
+                }
+            });
+
+            // Poll for connected students
+            setInterval(fetchConnectedStudents, 5000);
+        });
+
+        // Start video feed to Janus
+        async function startFeed() {
+            try {
+                // Request camera and microphone
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 640, height: 480 },
+                    audio: true
+                });
+                
+                // Display local stream
+                const localVideo = document.createElement('video');
+                localVideo.srcObject = stream;
+                localVideo.autoplay = true;
+                
+                // Send stream to Janus via signaling
+                // In production, this would connect to Janus gateway
+                console.log('Local stream acquired, sending to Janus...');
+                
+                // For now, just show local video
+                const feedsDiv = document.getElementById('feeds');
+                feedsDiv.innerHTML = '';
+                feedsDiv.appendChild(localVideo);
+                
+                isStreaming = true;
+            } catch (err) {
+                console.error('Camera access error:', err);
+                alert('Could not access camera/microphone. Please allow permissions.');
+            }
+        }
+
+        // Stop video feed
+        function stopFeed() {
+            isStreaming = false;
+            const feedsDiv = document.getElementById('feeds');
+            // Remove all child videos
+            feedsDiv.innerHTML = '';
+            console.log('Feed stopped');
+        }
+
+        // Fetch connected students from teacher API
+        async function fetchConnectedStudents() {
+            try {
+                const response = await fetch('/api/teacher/connected-students');
+                const data = await response.json();
+                if (data.success && data.count > 0) {
+                    console.log(`${data.count} students connected`);
+                    // In full implementation, would update video grid
+                }
+            } catch (error) {
+                console.error('Error fetching students:', error);
+            }
+        }
+    </script>
+</body>
+</html>
