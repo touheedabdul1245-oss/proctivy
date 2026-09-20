@@ -538,6 +538,21 @@ def normalize_student(student):
 
 
     # --------------------------------------------------------
+    # Availability flags — MySQL stores 0/1 integers.
+    # JavaScript checks with strict equality (=== true).
+    # Convert to proper booleans so the dashboard dots work.
+    # --------------------------------------------------------
+
+    for flag in (
+        "camera_available",
+        "audio_available",
+        "ai_available",
+        "tab_available",
+    ):
+        student[flag] = bool(student.get(flag))
+
+
+    # --------------------------------------------------------
     # Event information
     # --------------------------------------------------------
 
@@ -1058,7 +1073,41 @@ def create_face_descriptor(image):
             error
         )
 
-        return None
+    return None
+
+
+@app.after_request
+def set_cache_headers(response):
+    """
+    Prevent browsers from serving active exam pages from
+    back-forward cache (bfcache).  Active exam pages must
+    always re-execute the server-side submission check.
+    """
+    path = request.path or ""
+
+    if path.startswith("/student/exam/"):
+        response.headers["Cache-Control"] = (
+            "no-store, no-cache, must-revalidate, max-age=0"
+        )
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+
+    if path.startswith("/student/precheck/"):
+        response.headers["Cache-Control"] = (
+            "no-store, no-cache, must-revalidate, max-age=0"
+        )
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+
+    if path.startswith("/api/exams/") and path.endswith("/submit"):
+        response.headers["Cache-Control"] = (
+            "no-store, no-cache, must-revalidate, max-age=0"
+        )
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+
+    return response
+
 
 # ============================================================
 # HOME PAGE
@@ -1859,6 +1908,96 @@ def student_exam(exam_id):
         student_id=session.get("student_id"),
         student_agent_url=STUDENT_AGENT_URL
     )
+
+
+@app.route(
+    "/api/student/exam/<exam_id>/status",
+    methods=["GET"]
+)
+def api_student_exam_status(exam_id):
+    """
+    Lightweight check: has this student already submitted
+    or been terminated for this exam?  Used by the exam
+    page to revalidate after bfcache restore.
+    """
+    student_id = session.get("student_id")
+    if not student_id:
+        return jsonify({
+            "submitted": True,
+            "reason": "not_logged_in"
+        })
+
+    connection = None
+    cursor = None
+    try:
+        connection = get_database_connection()
+        if connection is None:
+            return jsonify({
+                "submitted": False,
+                "reason": "db_error"
+            })
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute(
+            """
+            SELECT submission_id, status
+            FROM exam_submissions
+            WHERE exam_id = %s
+              AND student_id = %s
+            ORDER BY submitted_at DESC
+            LIMIT 1
+            """,
+            (str(exam_id), str(student_id))
+        )
+        sub = cursor.fetchone()
+        if sub is not None:
+            return jsonify({
+                "submitted": True,
+                "reason": "already_submitted",
+                "submission_status": sub.get("status")
+            })
+
+        cursor.execute(
+            """
+            SELECT status
+            FROM exam_sessions
+            WHERE student_id = %s
+              AND exam_name = (
+                  SELECT exam_name
+                  FROM exams
+                  WHERE exam_id = %s
+                  LIMIT 1
+              )
+            ORDER BY start_time DESC
+            LIMIT 1
+            """,
+            (str(student_id), str(exam_id))
+        )
+        sess = cursor.fetchone()
+        if sess is not None and (
+            sess.get("status") or ""
+        ).upper() == "TERMINATED":
+            return jsonify({
+                "submitted": True,
+                "reason": "terminated"
+            })
+
+        return jsonify({
+            "submitted": False
+        })
+
+    except Exception as error:
+        print("Exam status check error:", error)
+        return jsonify({
+            "submitted": False,
+            "reason": "error"
+        })
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
 
 
 @app.route(

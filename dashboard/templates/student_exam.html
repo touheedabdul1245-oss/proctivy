@@ -985,6 +985,31 @@ async function loadExam() {
         }
 
 
+        /*
+         * Revalidate with server: has this student
+         * already submitted or been terminated?
+         * Catches bfcache restores and stale pages.
+         */
+        try {
+            var statusRes = await fetch(
+                "/api/student/exam/" +
+                encodeURIComponent(examId) +
+                "/status",
+                { cache: "no-store" }
+            );
+            if (statusRes.ok) {
+                var statusData =
+                    await statusRes.json();
+                if (statusData.submitted) {
+                    window.location.href = "/student";
+                    return;
+                }
+            }
+        } catch (statusErr) {
+            /* If status check fails, continue loading */
+        }
+
+
         document.getElementById(
             "examTitle"
         ).innerText =
@@ -1783,6 +1808,26 @@ function escapeHTML(value) {
 ========================================================= */
 
 loadExam();
+
+/*
+ * BFCache / pageshow guard.
+ * When the browser restores this page from back-forward cache,
+ * revalidate with the server.  If the exam was already
+ * submitted or terminated, redirect immediately.
+ */
+window.addEventListener("pageshow", function (event) {
+    if (event.persisted) {
+        window.location.reload();
+    }
+});
+
+/*
+ * Popstate guard — if the user navigates back/forward,
+ * reload to force server-side state check.
+ */
+window.addEventListener("popstate", function () {
+    window.location.reload();
+});
 
 </script>
 
