@@ -69,3 +69,12 @@ test_images/
 
 # ---- YOLO Weights (root-level, re-downloadable) ----
 *.pt
+
+# ---- Runtime Reports / Evidence ----
+reports/evidence/
+reports/submissions/
+reports/session_report_*.json
+reports/session_report_*.html
+
+# ---- YOLO Training / Detection Runs ----
+runs/
