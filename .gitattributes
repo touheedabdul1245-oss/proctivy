@@ -1,0 +1,22 @@
+# Normalize line endings for all text files
+* text=auto eol=lf
+
+# Explicitly mark these as text files
+*.py text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.txt text eol=lf
+*.bat text eol=crlf
+*.sh text eol=lf
+
+# Binary files
+*.jpg binary
+*.png binary
+*.pt binary
+*.avi binary
+*.mp4 binary
