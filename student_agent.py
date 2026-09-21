@@ -50,8 +50,8 @@ AGENT_PORT = 8765
 #
 CENTRAL_SERVER_URL = os.environ.get(
     "PROCTIFY_SERVER_URL",
-    "https://magnetic-colored-dating-php.trycloudflare.com"
-).rstrip("/")
+    "http://127.0.0.1:5000"
+).strip().rstrip("/")
 
 
 # Local live_monitor.py video server ports. This keeps the dashboard
@@ -339,10 +339,10 @@ def fetch_latest_video_frames(student_id):
 
     session = requests.Session()
 
-    # A very short connect timeout prevents a broken local server from
-    # holding this thread. Read timeout is also short because the
-    # /latest_frame endpoint returns exactly one JPEG.
     request_timeout = (0.5, 1.0)
+    frames_fetched = 0
+    frames_errors = 0
+    last_diag_time = time.time()
 
     while not video_fetch_stop_event.is_set():
 
@@ -355,29 +355,40 @@ def fetch_latest_video_frames(student_id):
             try:
                 if response.status_code == 200 and response.content:
                     frame = response.content
+                    frames_fetched += 1
 
-                    # Keep ONLY the newest JPEG.
                     with video_frame_lock:
                         video_latest_frame = frame
                         video_frame_sequence += 1
 
                 elif response.status_code not in (204, 200):
-                    print(
-                        "Local latest-frame rejected:",
-                        response.status_code
-                    )
+                    frames_errors += 1
+                    if frames_errors <= 3:
+                        print(
+                            "Local latest-frame rejected:",
+                            response.status_code
+                        )
 
             finally:
                 response.close()
 
         except requests.Timeout:
-            # Do not spam the terminal. A single missed frame is harmless.
             pass
 
         except requests.RequestException as error:
+            frames_errors += 1
+            if frames_errors <= 3:
+                print(
+                    "Local latest-frame connection error:",
+                    error
+                )
+
+        now = time.time()
+        if now - last_diag_time >= 30:
+            last_diag_time = now
             print(
-                "Local latest-frame connection error:",
-                error
+                f"Frame fetch: {frames_fetched} ok, "
+                f"{frames_errors} errors"
             )
 
         video_fetch_stop_event.wait(
@@ -413,6 +424,9 @@ def upload_latest_video_frames(student_id, session_id):
     request_timeout = (1.5, 2.5)
 
     last_uploaded_sequence = -1
+    frames_uploaded = 0
+    frames_rejected = 0
+    last_diag_time = time.time()
 
     while not video_upload_stop_event.is_set():
 
@@ -430,12 +444,6 @@ def upload_latest_video_frames(student_id, session_id):
         if frame is not None:
 
             try:
-                # Send the JPEG as the RAW HTTP request body.
-                # The student/session IDs are query parameters.
-                #
-                # This avoids multipart/form-data parsing through
-                # Cloudflare, which was causing intermittent 400/500
-                # errors at the central Flask endpoint.
                 upload_url = (
                     f"{central_frame_url}"
                     f"?student_id={requests.utils.quote(str(student_id))}"
@@ -455,12 +463,15 @@ def upload_latest_video_frames(student_id, session_id):
                 try:
                     if response.ok:
                         last_uploaded_sequence = sequence
+                        frames_uploaded += 1
 
                     elif response.status_code not in (408, 429, 502, 503, 504):
-                        print(
-                            "Central video upload rejected:",
-                            response.status_code
-                        )
+                        frames_rejected += 1
+                        if frames_rejected <= 3:
+                            print(
+                                "Central video upload rejected:",
+                                response.status_code
+                            )
 
                 finally:
                     response.close()
@@ -475,6 +486,14 @@ def upload_latest_video_frames(student_id, session_id):
                     "Central video upload error:",
                     error
                 )
+
+        now = time.time()
+        if now - last_diag_time >= 30:
+            last_diag_time = now
+            print(
+                f"Frame upload: {frames_uploaded} ok, "
+                f"{frames_rejected} rejected"
+            )
 
         video_upload_stop_event.wait(
             VIDEO_UPLOAD_INTERVAL
@@ -1051,7 +1070,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.server:
-        CENTRAL_SERVER_URL = args.server.rstrip("/")
+        CENTRAL_SERVER_URL = args.server.strip().rstrip("/")
 
     if args.bind:
         AGENT_HOST = args.bind

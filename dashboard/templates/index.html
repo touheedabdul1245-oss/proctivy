@@ -2047,11 +2047,17 @@ async function loadReports() {
                     '<div class="report-metric"><span>STUDENTS</span><strong>' + studentCount + '</strong></div>' +
                 '</div>' +
                 '<button class="report-action" data-batch="' + batchId + '" data-exam="' + examId + '">VIEW REPORT</button>' +
+                '<button class="report-action" data-batch-del="' + batchId + '" data-exam-del="' + examId + '" style="background:#dc2626;margin-left:6px">DELETE</button>' +
             '</article>';
         }).join("");
         list.querySelectorAll(".report-action[data-batch]").forEach(function(button) {
             button.addEventListener("click", function() {
                 openBatchReportDetail(Number(button.dataset.batch), button.dataset.exam);
+            });
+        });
+        list.querySelectorAll(".report-action[data-batch-del]").forEach(function(button) {
+            button.addEventListener("click", function() {
+                deleteBatchReport(Number(button.dataset.batchDel), button.dataset.examDel);
             });
         });
     } catch (error) {
@@ -2118,6 +2124,7 @@ async function openBatchReportDetail(batchId, examId) {
         }
         tableHtml += '</tbody></table></div>';
         detail.innerHTML = '<button class="report-action" onclick="backToReports()" style="max-width:180px;margin-bottom:18px">← BACK TO REPORTS</button>' +
+            '<button class="report-action" onclick="deleteBatchReport(' + data.batch_id + ',\'' + escapeHtml(data.exam_id) + '\')" style="max-width:180px;margin-bottom:18px;margin-left:8px;background:#dc2626">DELETE REPORT</button>' +
             '<h2>' + batchName + '</h2>' +
             '<p>' + examName + ' — ' + students.length + ' students</p>' +
             tableHtml;
@@ -2133,6 +2140,33 @@ function backToReports() {
     var list = document.getElementById("reportsList");
     if (list) list.style.display = "";
     currentBatchReport = null;
+}
+
+async function deleteBatchReport(batchId, examId) {
+    var report = cachedBatchReports.find(function(r) {
+        return Number(r.batch_id) === batchId && String(r.exam_id) === String(examId);
+    });
+    var batchName = report ? report.batch_name : "this batch";
+    var examName = report ? report.exam_name : "this exam";
+    if (!confirm("Delete report for " + batchName + " / " + examName + "?\n\nThis will remove all exam assignments, sessions, submissions, violations, and evidence for this batch+exam. The batch and students will NOT be deleted.")) {
+        return;
+    }
+    try {
+        var res = await fetch("/api/batch-reports/" + batchId + "/" + encodeURIComponent(examId), {
+            method: "DELETE",
+            headers: {"Content-Type": "application/json"}
+        });
+        var data = await res.json();
+        if (!res.ok || !data || data.success !== true) {
+            alert("Delete failed: " + (data.error || "Unknown error"));
+            return;
+        }
+        alert("Report deleted.\n" + (data.message || ""));
+        loadReports();
+    } catch (err) {
+        console.error("Report delete error:", err);
+        alert("Delete failed.");
+    }
 }
 
 var currentExportBatchId = null;

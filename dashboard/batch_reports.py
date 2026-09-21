@@ -171,6 +171,103 @@ def _fetch_batch_students(cursor, batch_id, exam_id):
     return exam_name_val, students
 
 
+@batch_reports_bp.route('/api/batch-reports/<int:batch_id>/<exam_id>', methods=['DELETE'])
+def api_delete_batch_report(batch_id, exam_id):
+    if not _teacher_logged_in():
+        return jsonify({"success": False, "error": "Teacher login required."}), 401
+
+    connection = None
+    cursor = None
+    try:
+        connection = _get_db()
+        connection.autocommit = False
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("SELECT batch_name FROM batches WHERE batch_id = %s LIMIT 1", (batch_id,))
+        batch_row = cursor.fetchone()
+        if not batch_row:
+            return jsonify({"success": False, "error": "Batch not found."}), 404
+
+        cursor.execute("SELECT exam_name FROM exams WHERE exam_id = %s LIMIT 1", (str(exam_id),))
+        exam_row = cursor.fetchone()
+        exam_name_val = exam_row["exam_name"] if exam_row else ""
+
+        cursor.execute("SELECT student_id FROM exam_assignments WHERE batch_id = %s AND exam_id = %s", (batch_id, str(exam_id)))
+        assigned_students = [r["student_id"] for r in cursor.fetchall()]
+
+        if not assigned_students:
+            return jsonify({"success": False, "error": "No assignments found for this batch+exam."}), 404
+
+        session_ids = []
+        if exam_name_val:
+            placeholders = ",".join(["%s"] * len(assigned_students))
+            cursor.execute(
+                f"SELECT session_id FROM exam_sessions WHERE student_id IN ({placeholders}) AND exam_name = %s",
+                assigned_students + [exam_name_val]
+            )
+            session_ids = [r["session_id"] for r in cursor.fetchall()]
+
+        if session_ids:
+            sess_ph = ",".join(["%s"] * len(session_ids))
+            cursor.execute(f"DELETE FROM evidence WHERE session_id IN ({sess_ph})", session_ids)
+            evidence_deleted = cursor.rowcount
+
+            cursor.execute(f"DELETE FROM violations WHERE session_id IN ({sess_ph})", session_ids)
+            violations_deleted = cursor.rowcount
+        else:
+            evidence_deleted = 0
+            violations_deleted = 0
+
+        sess_placeholders = ",".join(["%s"] * len(assigned_students))
+        cursor.execute(
+            f"DELETE FROM exam_submissions WHERE student_id IN ({sess_placeholders}) AND exam_id = %s",
+            assigned_students + [str(exam_id)]
+        )
+        submissions_deleted = cursor.rowcount
+
+        if exam_name_val:
+            cursor.execute(
+                f"DELETE FROM exam_sessions WHERE student_id IN ({sess_placeholders}) AND exam_name = %s",
+                assigned_students + [exam_name_val]
+            )
+            sessions_deleted = cursor.rowcount
+        else:
+            sessions_deleted = 0
+
+        cursor.execute(
+            "DELETE FROM exam_assignments WHERE batch_id = %s AND exam_id = %s",
+            (batch_id, str(exam_id))
+        )
+        assignments_deleted = cursor.rowcount
+
+        connection.commit()
+
+        return jsonify({
+            "success": True,
+            "message": f"Report for {batch_row['batch_name']} / {exam_name_val} deleted.",
+            "deleted": {
+                "assignments": assignments_deleted,
+                "sessions": sessions_deleted,
+                "submissions": submissions_deleted,
+                "violations": violations_deleted,
+                "evidence": evidence_deleted,
+            }
+        })
+    except Exception as error:
+        if connection:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+        print("Batch report delete error:", error)
+        return jsonify({"success": False, "error": str(error)}), 500
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if connection is not None:
+            connection.close()
+
+
 @batch_reports_bp.route('/api/batch-reports/<int:batch_id>/<exam_id>', methods=['GET'])
 def api_batch_report_detail(batch_id, exam_id):
     if not _teacher_logged_in():
