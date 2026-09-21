@@ -345,3 +345,4 @@ python test_batch_reports.py
   scripts pointing at deleted files/models.
 * All monitoring/exam history was purged once so the database starts clean
   (the enrolled `students` rows are kept).
+"# FINAL_PROCTIFY" 
